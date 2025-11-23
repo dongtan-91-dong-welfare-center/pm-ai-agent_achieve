@@ -62,3 +62,11 @@ def check_long_term_stock_criteria(product_id: str):
     if days == 0 or pd.isna(days):
         return "Master Data에 기준일 없음. SOP 문서 탐색 필요."
     return f"기준일: {days}일"
+
+@tool
+def mock_function():
+    """
+    새로 생성하겠습니다.
+    :return:
+    """
+    pass
