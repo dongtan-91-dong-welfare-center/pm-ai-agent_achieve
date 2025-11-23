@@ -1,0 +1,4 @@
+history_id,po_id,product_id,received_qty,received_date,inspection_status
+HIS-0001,PO-2024-003,공기밥,200,2024-12-06,Pass
+HIS-0002,PO-2024-001,가지조림,100,2024-12-18,Hold
+HIS-0003,PO-2024-001,가지조림,200,2024-12-20,Pass
