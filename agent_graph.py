@@ -7,9 +7,10 @@ load_dotenv()
 api_key = os.environ.get("GOOGLE_API_KEY")
 model = os.environ.get("MODEL")
 
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, MessagesState
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.prebuilt import ToolNode
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -21,6 +22,9 @@ import data_loader
 
 # Python 실행기 준비(추후 보안을 위해 docker(podman)로 실행)
 repl = PythonREPL()
+
+# 메모리 전역 변수
+memory = MemorySaver()
 
 # 생성된 코드가 'DB' 변수를 사용할 수 있도록 로컬 환경(locals)을 설정
 RUN_CONTEXT = {"DB": data_loader.load_master_data()}
@@ -92,8 +96,15 @@ class PythonAnalysisRequest(BaseModel):
     """복잡한 데이터 분석, 계산, 그래프 생성이 필요할 때 이 도구를 호출하세요."""
     description: str = Field(description="분석할 내용에 대한 상세 설명")
 
-# LLM 설정 수정: 기존 tools에 PythonAnalysisRequest를 추가로 바인딩
-llm_with_tools = llm.bind_tools(tools + [PythonAnalysisRequest])
+# 발주 확정 신호용 구조체 (LLM이 이 도구를 호출하면 발주 절차 시작)
+class FinalizeOrderRequest(BaseModel):
+    """
+    모든 분석이 끝나고, 사용자가 발주를 승인했을 때 최종적으로 이 도구를 호출하여 DB에 저장합니다.
+    """
+    confirm_message: str = Field(description="발주 확정에 대한 최종 요약 메시지")
+
+# LLM 바인딩
+llm_with_tools = llm.bind_tools(tools + [PythonAnalysisRequest, FinalizeOrderRequest])
 
 # Prompt Template
 prompt_template = ChatPromptTemplate.from_messages([
@@ -244,30 +255,73 @@ def route_reasoner(state: AgentState):
     tool_call = last_message.tool_calls[0]
     tool_name = tool_call["name"]
 
-    # 3. "PythonAnalysisRequest"를 호출했다면 -> Code Generator로 전환
+    # "PythonAnalysisRequest"를 호출했다면 -> Code Generator로 전환
     if tool_name == "PythonAnalysisRequest":
         return "code_generator"
+
+    # 발주 확정 요청 시 finalize_order로 이동
+    if tool_name == "FinalizeOrderRequest":
+        return "finalize_order"
 
     # 그 외 일반 도구(재고 조회 등)라면 -> 일반 Tools 노드로 이동
     return "tools"
 
+# 실제 DB 저장을 수행하는 노드 (Func-133 구현부)
+def finalize_order(state: AgentState) -> dict:
+    """
+    [Human-in-the-loop 대상 노드]
+    이 노드는 'interrupt_before'에 의해 보호됩니다.
+    사용자가 승인 버튼을 눌러야만 비로소 실행됩니다.
+    """
+    # 저장할 데이터 가져오기 (CodeExecutor 등이 analysis_data에 저장해둔 Draft 데이터)
+    data = state.get("analysis_data", {})
+    draft_po = data.get("draft_po")  # 예: 발주 리스트
+
+    if not draft_po:
+        return {
+            "messages": [AIMessage(content="❌ 확정할 발주 데이터(Draft PO)가 없습니다. 먼저 소요량 분석을 수행해주세요.")]
+        }
+
+    # DB 적재 로직 (여기서는 MVP용 Mock 처리)
+    # 실제로는 data_loader.save_purchase_order(draft_po) 호출
+    try:
+        # TODO: @parksaehyun 님이 구현할 DB Insert 함수 호출 위치
+        # saved_count = insert_to_db(draft_po)
+        saved_count = len(draft_po) if isinstance(draft_po, list) else 1
+
+        result_msg = f"성공적으로 {saved_count}건의 발주 정보를 'Purchase_Order' 테이블에 이관했습니다."
+
+        return {
+            "messages": [AIMessage(content=result_msg)],
+            "waiting_for_approval": False,  # 승인 대기 상태 해제
+            "analysis_data": {}  # 데이터 초기화 (선택사항)
+        }
+
+    except Exception as e:
+        return {
+            "messages": [AIMessage(content=f"DB 저장 중 오류 발생: {e}")]
+        }
+
 # 그래프 정의
 builder = StateGraph(AgentState)
 
+# 그래프 빌더 연결
 builder.add_node("reasoner", reasoner)
 builder.add_node("tools", ToolNode(tools))
 builder.add_node("code_generator", code_generator)
 builder.add_node("code_executor", code_executor)
+builder.add_node("finalize_order", finalize_order)
 
 builder.set_entry_point("reasoner")
 
-# # Tool 실행 조건부 경로
+# Tool 실행 조건부 경로
 builder.add_conditional_edges(
     "reasoner",
     route_reasoner,  # 위에서 만든 커스텀 라우터 함수
     {
         "tools": "tools",
         "code_generator": "code_generator",
+        "finalize_order": "finalize_order",
         "__end__": "__end__"
     }
 )
@@ -279,6 +333,7 @@ builder.add_conditional_edges(
 # reasoner가 'GenerateCode' 라는 도구를 호출하게 만들 수 있습니다.
 
 # Reasoner -> CodeGenerator -> CodeExecutor -> Reasoner
+builder.add_edge("tools", "reasoner")
 builder.add_edge("code_generator", "code_executor")
 builder.add_conditional_edges(
     "code_executor",
@@ -290,8 +345,11 @@ builder.add_conditional_edges(
     }
 )
 
-# 일반 Tool 실행 후에는 다시 Reasoner로 복귀
-builder.add_edge("tools", "reasoner")
+# finalize_order 실행 후에는 다시 reasoner로 가서 "저장 완료"를 보고함
+builder.add_edge("finalize_order", "reasoner")
 
 # 최종 그래프 컴파일
-graph = builder.compile()
+graph = builder.compile(
+    checkpointer=memory,    # 상태 저장소
+    interrupt_before=["finalize_order"],
+)
