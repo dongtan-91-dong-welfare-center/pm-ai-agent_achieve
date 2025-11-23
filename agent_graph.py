@@ -12,9 +12,18 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import chain
+from langchain_experimental.utilities import PythonREPL
+
+import data_loader
+
+# Python 실행기 준비(추후 보안을 위해 docker(podman)로 실행)
+repl = PythonREPL()
+
+# 생성된 코드가 'DB' 변수를 사용할 수 있도록 로컬 환경(locals)을 설정
+RUN_CONTEXT = {"DB": data_loader.load_master_data()}
 
 # 내부 도구 임포트
 from tools import (
@@ -120,13 +129,33 @@ builder = StateGraph(AgentState)
 
 builder.add_node("reasoner", reasoner)
 builder.add_node("tools", ToolNode(tools))
+builder.add_node("code_generator", code_generator)
+builder.add_node("code_executor", code_executor)
 
 builder.set_entry_point("reasoner")
 
 # Tool 실행 조건부 경로
 builder.add_conditional_edges("reasoner", tools_condition)
 
-# Tool 실행 후 다시 Reasoner
+# [엣지 연결]
+# 1. Reasoner가 코드 생성을 결정하면 Generator로 이동 (조건부 엣지 필요하지만, 지금은 테스트를 위해 직접 연결)
+# 실제로는 reasoner의 output을 보고 tool_call이냐 code_gen이냐를 판단해야 합니다.
+# 여기서는 '사용자가 분석을 요청하면' -> code_generator로 간다고 가정하는 별도 진입점을 만들거나
+# reasoner가 'GenerateCode' 라는 도구를 호출하게 만들 수 있습니다.
+
+# Reasoner -> CodeGenerator -> CodeExecutor -> Reasoner
+builder.add_edge("code_generator", "code_executor")
+builder.add_conditional_edges(
+    "code_executor",
+    route_after_execution,
+    {
+        "success": "reasoner",     # 성공 시 결과를 가지고 다시 추론
+        "retry": "code_generator", # 실패 시 다시 코드 작성 (Loop)
+        "max_retries": "reasoner"  # 포기하고 에러 보고
+    }
+)
+
+# 일반 Tool 실행 후에는 다시 Reasoner로 복귀
 builder.add_edge("tools", "reasoner")
 
 # 최종 그래프 컴파일
