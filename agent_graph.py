@@ -10,10 +10,10 @@ model = os.environ.get("MODEL")
 from langgraph.graph import StateGraph, MessagesState
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
-
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from pydantic import BaseModel, Field
 from langchain_core.runnables import chain
 from langchain_experimental.utilities import PythonREPL
 
@@ -31,11 +31,6 @@ from tools import (
     get_current_stock,
     check_long_term_stock_criteria
 )
-
-# 환경 변수 로드
-load_dotenv()
-api_key = os.environ.get("GOOGLE_API_KEY")
-model = os.environ.get("MODEL")
 
 if not api_key or not model:
     raise ValueError("GOOGLE_API_KEY 또는 MODEL 환경변수를 설정해주세요.")
@@ -92,7 +87,13 @@ tools = [
     check_long_term_stock_criteria
 ]
 
-llm_with_tools = llm.bind_tools(tools)
+# Python 분석 요청용 구조체(라우팅 신호용)
+class PythonAnalysisRequest(BaseModel):
+    """복잡한 데이터 분석, 계산, 그래프 생성이 필요할 때 이 도구를 호출하세요."""
+    description: str = Field(description="분석할 내용에 대한 상세 설명")
+
+# LLM 설정 수정: 기존 tools에 PythonAnalysisRequest를 추가로 바인딩
+llm_with_tools = llm.bind_tools(tools + [PythonAnalysisRequest])
 
 # Prompt Template
 prompt_template = ChatPromptTemplate.from_messages([
@@ -124,6 +125,132 @@ def reasoner(state: MessagesState) -> dict:
         return {"messages": [AIMessage(content=f"처리 중 오류 발생: {e}")]}
 
 
+@chain
+def code_generator(state: AgentState) -> dict:
+    """
+    Func-148: 분석을 위한 Python 코드 생성
+    """
+    messages = state.get("messages", [])
+    last_error = state.get("code_execution_result")
+    generated_code = state.get("generated_code")
+
+    # 시스템 프롬프트: 데이터 스키마와 가이드라인 제공
+    code_gen_prompt = """
+    당신은 생산 관리 데이터를 분석하는 Python 전문가입니다.
+    주어진 질문을 해결하기 위해 'DB' 딕셔너리에 있는 Pandas DataFrame을 사용하는 코드를 작성하세요.
+
+    [사용 가능한 데이터 (DB keys)]
+    - 'plan', 'bom', 'inventory', 'product', 'purchase_order'
+
+    [규칙]
+    1. 코드는 반드시 실행 가능한 Python 스크립트여야 합니다.
+    2. 결과 데이터는 반드시 `result` 라는 변수에 할당해야 합니다.
+    3. 마크다운(```python ... ```) 태그 없이 코드만 출력하거나, 태그가 있다면 파싱 가능한 형태여야 합니다.
+    4. 그래프/시각화가 필요하면 스트림릿을 사용하지 말고 데이터프레임 자체를 `result`에 담으세요.
+    """
+
+    # 재시도(Self-Correction) 상황인 경우 에러 메시지 포함
+    if last_error and generated_code:
+        user_msg = f"""
+        이전 코드 실행 중 에러가 발생했습니다.
+
+        [이전 코드]
+        {generated_code}
+
+        [에러 메시지]
+        {last_error}
+
+        코드를 수정하여 다시 작성해주세요.
+        """
+    else:
+        user_msg = "사용자의 요청을 분석하여 코드를 작성해주세요."
+
+    # LLM 호출 (코드 생성 전용 프롬프트 적용)
+    msg_history = [SystemMessage(content=code_gen_prompt)] + messages + [HumanMessage(content=user_msg)]
+
+    response = llm.invoke(msg_history)
+
+    # 코드 추출 (간단한 파싱 로직)
+    code = response.content.replace("```python", "").replace("```", "").strip()
+
+    return {"generated_code": code, "retry_count": 0}  # 카운트 리셋은 성공 시에만, 여기선 단순히 코드 갱신
+
+
+def code_executor(state: AgentState) -> dict:
+    """
+    Func-144: 생성된 코드 실행 및 결과 검증
+    """
+    code = state.get("generated_code")
+    retry_count = state.get("retry_count", 0)
+
+    if not code:
+        return {"code_execution_result": "실행할 코드가 없습니다.", "retry_count": retry_count}
+
+    try:
+        # 코드 실행 (안전한 샌드박스 환경 권장..)
+        # 주의: 배포 시에는 exec()를 별도 실행 컨테이너 사용하기
+        local_scope = RUN_CONTEXT.copy()
+        exec(code, {}, local_scope)
+
+        # 결과 추출 ('result' 변수 약속)
+        result = local_scope.get("result")
+
+        if result is None:
+            return {
+                "code_execution_result": "코드는 실행되었으나 'result' 변수가 정의되지 않았습니다.",
+                "retry_count": retry_count + 1
+            }
+
+        # 실행 성공 시
+        return {
+            "analysis_data": {"last_run_result": result},  # 결과를 State에 저장
+            "code_execution_result": None,  # 에러 클리어
+            "messages": [AIMessage(content=f"분석 결과:\n{result}")]  # 사용자에게 결과 보고
+        }
+
+    except Exception as e:
+        # 실행 실패 시 에러 메시지 저장
+        return {
+            "code_execution_result": str(e),
+            "retry_count": retry_count + 1
+        }
+
+
+def route_after_execution(state: AgentState):
+    """
+    코드 실행 후 성공 여부에 따른 분기 처리
+    """
+    error = state.get("code_execution_result")
+    retry_count = state.get("retry_count", 0)
+
+    if error:
+        if retry_count >= 3:
+            return "max_retries"  # 3회 실패 시 중단
+        return "retry"  # 에러 있으면 다시 생성(Self-Correction)
+
+    return "success"  # 성공하면 종료(또는 다음 단계)
+
+
+# Reasoner의 다음 경로를 결정하는 함수
+def route_reasoner(state: AgentState):
+    messages = state.get("messages", [])
+    last_message = messages[-1]
+
+    # 도구 호출이 없는 경우 -> 종료(END)
+    if not last_message.tool_calls:
+        return "__end__"
+
+    # 도구 호출이 있는 경우, 어떤 도구인지 확인
+    tool_call = last_message.tool_calls[0]
+    tool_name = tool_call["name"]
+
+    # 3. "PythonAnalysisRequest"를 호출했다면 -> Code Generator로 전환
+    if tool_name == "PythonAnalysisRequest":
+        return "code_generator"
+
+    # 그 외 일반 도구(재고 조회 등)라면 -> 일반 Tools 노드로 이동
+    return "tools"
+
 # 그래프 정의
 builder = StateGraph(AgentState)
 
@@ -134,8 +261,16 @@ builder.add_node("code_executor", code_executor)
 
 builder.set_entry_point("reasoner")
 
-# Tool 실행 조건부 경로
-builder.add_conditional_edges("reasoner", tools_condition)
+# # Tool 실행 조건부 경로
+builder.add_conditional_edges(
+    "reasoner",
+    route_reasoner,  # 위에서 만든 커스텀 라우터 함수
+    {
+        "tools": "tools",
+        "code_generator": "code_generator",
+        "__end__": "__end__"
+    }
+)
 
 # [엣지 연결]
 # 1. Reasoner가 코드 생성을 결정하면 Generator로 이동 (조건부 엣지 필요하지만, 지금은 테스트를 위해 직접 연결)
@@ -147,7 +282,7 @@ builder.add_conditional_edges("reasoner", tools_condition)
 builder.add_edge("code_generator", "code_executor")
 builder.add_conditional_edges(
     "code_executor",
-    route_after_execution,
+    route_after_execution,  # success/retry 분기
     {
         "success": "reasoner",     # 성공 시 결과를 가지고 다시 추론
         "retry": "code_generator", # 실패 시 다시 코드 작성 (Loop)
