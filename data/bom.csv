@@ -1,0 +1,5 @@
+bom_id,parent_product_id,component_product_id,component_quantity,bom_level
+1,우루사,가지조림,10,1
+2,우루사,된장국,5,1
+3,우루사,엔블로,1,1
+4,가지조림,공기밥,0.2,2

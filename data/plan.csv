@@ -1,0 +1,3 @@
+plan_id,plan_type,destination_country,packing_unit,product_id,start_date,end_date,batch_number,order_status,planned_qty,status
+PL-2024-001,완제,한국,100,우루사,2024-12-01,2024-12-10,BT-001,TRUE,100,Confirmed
+PL-2024-002,완제,미국,200,우루사,2024-12-15,2024-12-28,BT-002,FALSE,200,Draft

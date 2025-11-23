@@ -1,24 +1,28 @@
 [tool.poetry]
+package-mode = false
+
+[project]
 name = "pm-ai-agent"
 version = "0.1.0"
 description = "Production` Management AI Agent (Python Service)"
-authors = ["qldrh112<didie8520@gmail.com>"]
+authors = [
+    {name = "qldrh112",email = "didie8520@gmail.com"}
+]
 readme = "README.md"
+requires-python = ">=3.11, <=3.14"
+dependencies = [
+    "langgraph (>=1.0.3,<2.0.0)",
+    "streamlit (>=1.51.0,<2.0.0)",
+    "python-dotenv (>=1.2.1,<2.0.0)",
+    "pandas (>=2.3.3,<3.0.0)",
+    "langchain-google-genai (>=3.1.0,<4.0.0)",
+    "tabulate (>=0.9.0,<0.10.0)"
+]
 
-[tool.poetry.dependencies]
-python = ">=3.11, <4.0.0"
-uvicorn = ">=0.38.0,<0.39.0"
-pydantic = ">=2.12.4,<3.0.0"
-pydantic-settings = ">=2.12.0,<3.0.0"
-langchain = ">=1.0.7,<2.0.0"
-langchain-google-genai = ">=3.0.3,<4.0.0"
-langgraph = ">=1.0.3,<2.0.0"
-python-dotenv = ">=1.2.1,<2.0.0"
-fastapi = ">=0.121.1,<0.122.0"
-
-[tool.poetry.group.dev.dependencies]
-pytest = ">=9.0.1,<10.0.0"
-pytest-asyncio = ">=1.3.0,<2.0.0"
+[tool.poetry.group.test.dependencies]
+pytest = ">=8.0.0,<10.0.0"
+pytest-cov = ">=4.1.0,<6.0.0"
+pytest-mock = ">=3.14.0,<5.0.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
