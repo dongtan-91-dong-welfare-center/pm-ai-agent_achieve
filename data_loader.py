@@ -25,7 +25,7 @@ COLUMN_MAPPING = {
         "구성부품수량": "component_quantity",
     },
     "purchase_history": {
-        "이력ID": "purchase_history_id",
+        # "이력ID": "purchase_history_id",
         "구매문서번호": "po_document_id",
         "구매품목": "po_item_id",
         "입고일자": "goods_receipt_date",
@@ -65,7 +65,8 @@ TABLE_SCHEMA = {
         "standard_quantity", "bom_level"
     ],
     "purchase_history": [
-        "purchase_history_id", "po_document_id", "po_item_id", "goods_receipt_date",
+        # "purchase_history_id",
+        "po_document_id", "po_item_id", "goods_receipt_date",
         "movement_type", "product_id", "order_quantity", "info_record_updated_at",
         "old_value", "new_value", "master_price", "master_price_currency",
         "order_price", "order_currency", "price_unit", "received_quantity",
