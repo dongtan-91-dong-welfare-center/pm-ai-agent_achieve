@@ -31,3 +31,6 @@ Thumbs.db
 
 # --- 실제 현업 데이터 DATA ---
 /data/
+
+# --- 회의록 ---
+/meeting_notes/
