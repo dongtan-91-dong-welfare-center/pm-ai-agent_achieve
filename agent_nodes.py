@@ -7,8 +7,8 @@ import data_loader
 from agent_state import AgentState
 from agent_config import llm, chain_prompt_llm
 
-# Python 실행 환경 준비
-RUN_CONTEXT = {"DB": data_loader.load_master_data(), "pd": pd}
+# Python 실행 환경 준비 - 내부 LLM을 사용하는 경우 모두 사용해도 됨
+# RUN_CONTEXT = {"DB": data_loader.load_master_data(), "pd": pd}
 
 
 @chain
@@ -88,13 +88,22 @@ def code_executor(state: AgentState) -> dict:
     생성된 코드 실행 및 결과 검증
     """
     code = state.get("generated_code")
-    retry_count = state.get("retry_count", 0)
-
     if not code:
         return {"code_execution_result": "실행할 코드를 찾을 수 없습니다."}
 
+    retry_count = state.get("retry_count", 0)
+
+    # LLM용 보안 DB 생성(민감한 컬럼을 제거)
+    full_db = data_loader.load_master_data()
+    secure_db = {}
+    for name, df in full_db.items():
+        # 원본 보존
+        secure_db[name] = df.drop(columns=['description', 'vendor_name'], errors='ignore')
+
+    # 실행 컨텍스트에 보안 DB 주입
+    local_scope = {"DB": secure_db, "pd": pd}
+
     try:
-        local_scope = RUN_CONTEXT.copy()
         # TO DO: 배포 시에는 exec()를 별도 실행 컨테이너로 구성하기
         exec(code, {}, local_scope)
 
