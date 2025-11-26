@@ -3,6 +3,8 @@ import pandas as pd
 from agent_graph import graph
 from langchain_core.messages import HumanMessage, AIMessage
 import data_loader
+from data_loader import FILE_PROCESSORS
+
 
 # 공통 함수 - 시각화 렌더러
 def render_analysis_result(result_data):
@@ -14,14 +16,14 @@ def render_analysis_result(result_data):
     df_viz = None
     raw_data = result_data
 
-    # 1. 데이터 구조 파악 (Dict vs DataFrame)
+    # 데이터 구조 파악 (Dict vs DataFrame)
     if isinstance(raw_data, dict) and "type" in raw_data and "data" in raw_data:
         chart_type = raw_data["type"]
         raw_data_content = raw_data["data"]
     else:
         raw_data_content = raw_data
 
-    # 2. DataFrame 복원 (msgpack 직렬화 해제)
+    # DataFrame 복원 (msgpack 직렬화 해제)
     if isinstance(raw_data_content, dict) and "columns" in raw_data_content and "data" in raw_data_content:
         try:
             df_viz = pd.DataFrame(
@@ -29,12 +31,13 @@ def render_analysis_result(result_data):
                 columns=raw_data_content["columns"],
                 index=raw_data_content.get("index")
             )
+        # 추후 예외 절 구체화 필요
         except Exception:
             df_viz = None  # 복원 실패
     elif isinstance(raw_data_content, pd.DataFrame):
         df_viz = raw_data_content
 
-    # 3. 실제 렌더링
+    # 실제 렌더링
     if df_viz is not None and not df_viz.empty:
         with st.expander(f"분석 결과 ({chart_type})", expanded=True):
             if chart_type == "line":
@@ -56,30 +59,28 @@ with st.sidebar:
     st.header("Data Management")
 
     # 엑셀 파일 업로드 섹션
-    with st.expander("Data Upload (Excel)", expanded=True):
-        st.info(".xlsx 파일을 업로드하세요.")
+    with st.expander("마스터 파일 업로드", expanded=True):
 
-        # 업로드할 데이터 유형 선택
-        upload_type = st.selectbox(
-            "데이터 유형 선택",
-            options=list(data_loader.TABLE_SCHEMA.keys())  # ['product', 'bom', ...]
+        source_type = st.selectbox(
+            "업로드할 파일을 선택하세요.",
+            options=list(FILE_PROCESSORS.keys())
         )
-
         uploaded_file = st.file_uploader("엑셀 파일 선택", type=["xlsx"])
 
-        if uploaded_file and st.button("데이터 적재 (ETL)"):
+        if uploaded_file and st.button("데이터 추가"):
             with st.spinner("데이터 파싱 및 저장 중..."):
-                success, msg = data_loader.save_uploaded_excel(uploaded_file, upload_type)
+                success, msg = data_loader.save_uploaded_file_by_type(uploaded_file, source_type)
                 if success:
                     st.success(msg)
-                    # 캐시 데이터 갱신을 위해 필요한 경우 st.rerun() 사용 가능
+                    # Streamlit 앱을 다시 실행하여 변경된 세션 상태를 화면에 반영합니다.
+                    # st.rerun()
                 else:
                     st.error(msg)
 
     st.divider()
 
     # DB 조회 섹션
-    st.subheader("DB Explorer")
+    st.subheader("데이터 탐색기")
 
     # 현재 로드된 데이터 가져오기
     current_db = data_loader.load_master_data()
@@ -89,7 +90,7 @@ with st.sidebar:
 
         if selected_table:
             df = current_db[selected_table]
-            st.caption(f"Total Rows: {len(df)}")
+            st.caption(f"행의 개수: {len(df)}")
             st.dataframe(df, width="stretch", height=300)
     else:
         st.warning("데이터가 없습니다.")
@@ -138,7 +139,7 @@ if user_input:
             # with st.expander("🔍 Debug: Event Stream", expanded=False):
             #     st.write(event)
 
-            # [A] Reasoner (LLM 답변) 처리
+            # Reasoner (LLM 답변) 처리
             if "reasoner" in event:
                 msg = event["reasoner"]["messages"][-1]
                 if msg.content:
@@ -150,14 +151,13 @@ if user_input:
                                 full_response += part["text"]
                     message_placeholder.markdown(full_response + " ▌")
 
-            # [B] Finalize Order
+            # Finalize Order
             if "finalize_order" in event:
                 msg = event["finalize_order"]["messages"][-1]
                 full_response += f"\n\n✅ {msg.content}"
                 message_placeholder.markdown(full_response)
 
-            # [D] Code Executor (실시간 시각화 및 데이터 캡처)
-            # 중요: agent_graph.py에서 노드 이름을 "code_executor"로 설정했는지 확인 필수!
+            # Code Executor (실시간 시각화 및 데이터 캡처)
             if "code_executor" in event:
                 node_output = event["code_executor"]
 
@@ -183,5 +183,6 @@ if user_input:
                         st.write(node_output)
 
         message_placeholder.markdown(full_response)
+
     # AI 응답 저장
     st.session_state["messages"].append(AIMessage(content=full_response))
