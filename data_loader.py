@@ -107,11 +107,11 @@ def _process_bom_info(df):
 
 FILE_PROCESSORS = {
     # (UI표시 이름) : (타겟 테이블, 처리 함수, 병합 전략)
-    "자재 정보": ("product", _process_product_info, "UPSERT_ROWS"),
-    "자재 외부 착인 여부": ("product", _process_attachment_info, "EXTEND_COLUMNS"),
-    "자재 에디션 숫자": ("product", _process_edition_info, "EXTEND_COLUMNS"),
-    "공급업체 목록": ("vendor",_process_vendor_info,"UPSERT_ROWS"),
-    "BOM": ("bom", _process_bom_info, "REPLACE_ALL"),
+    "자재 정보": ("product", _process_product_info, "UPSERT_ROWS", "product_id", ),
+    "자재 외부 착인 여부": ("product", _process_attachment_info, "EXTEND_COLUMNS", "product_id", ),
+    "자재 에디션 숫자": ("product", _process_edition_info, "EXTEND_COLUMNS", "product_id", ),
+    "공급업체 목록": ("vendor",_process_vendor_info,"UPSERT_ROWS", "vendor_id", ),
+    "BOM": ("bom", _process_bom_info, "REPLACE_ALL", None),
 }
 
 
@@ -122,7 +122,7 @@ def save_uploaded_file_by_type(uploaded_file, source_type):
     if source_type not in FILE_PROCESSORS:
         return False, f"지원하지 않는 파일 형식입니다."
 
-    target_table, processor_func, strategy = FILE_PROCESSORS[source_type]
+    target_table, processor_func, strategy, pk_col = FILE_PROCESSORS[source_type]
     # 기존 데이터를 불러오기 위한 경로 설정
     file_path = os.path.join(DATA_DIR, f"{target_table}.csv")
 
@@ -140,18 +140,9 @@ def save_uploaded_file_by_type(uploaded_file, source_type):
             new_df.to_csv(file_path, index=False)
             return True, f"[{source_type}] 저장 완료. {len(new_df)}건)"
 
-        # PK 설정
-        if target_table == 'product':
-            pk_col = "product_id"
-        elif target_table == 'vendor':
-            pk_col = "vendor_id"
-        # 필요 시 추가할 것
-        else:
-            pk_col = "" 
-        
-        # 필요 시 추가
-        # if pk_col not in new_df.columns:
-        #     return False, f"결과 데이터에 식별자({pk_col})가 없습니다."
+        # PK가 필요한 전략인데 PK가 None이면 에러 처리
+        if strategy in ["UPSERT_ROWS", "EXTEND_COLUMNS"] and not pk_col:
+            return False, "설정 오류: 해당 전략은 식별자(PK)가 필요합니다."
 
         # 새로운 데이터에 대해 숫자로 들어오든 문자로 들어오든 무조건 str로 맞추고 공백을 날립니다.
         new_df[pk_col] = new_df[pk_col].astype(str).str.strip()
