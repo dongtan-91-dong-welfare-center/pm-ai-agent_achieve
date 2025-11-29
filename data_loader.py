@@ -1,5 +1,7 @@
 import pandas as pd
+import openpyxl
 import os
+import re
 
 # 데이터 파일 경로 설정
 # 추후 DB 연결 시 삭제
@@ -12,16 +14,9 @@ def _process_product_info(df):
     """
     # 컬럼 매핑
     mapping = {
-        "자재 유형": "product_type",
-        "플랜트": "plant_code",
-        "자재": "product_id",
-        "자재 내역": "description",
-        "기본 단위": "base_unit",
-        "플랜트별 자재 상태": "plant_status",
-        "생산 저장 위치": "prod_storage_loc",
-        "EP 저장 위치": "ep_storage_loc",
-        "잔여 유효 기간": "remaining_shelf_life_days",
-        "총 셀프 라이프": "total_shelf_life_days",
+        "자재 유형": "product_type", "플랜트": "plant_code", "자재": "product_id", "자재 내역": "description",
+        "기본 단위": "base_unit", "플랜트별 자재 상태": "plant_status", "생산 저장 위치": "prod_storage_loc",
+        "EP 저장 위치": "ep_storage_loc", "잔여 유효 기간": "remaining_shelf_life_days", "총 셀프 라이프": "total_shelf_life_days",
     }
     df.rename(columns=mapping, inplace=True)
 
@@ -93,7 +88,6 @@ def _process_bom_info(df):
         "구성부품수량": "component_quantity",
     }
     df.rename(columns=mapping, inplace=True)
-
     # 데이터 타입 보정 (Agent가 Join할 때 중요)
     # 외래키(FK) 역할을 하는 컬럼들은 문자열로 통일해줘야 나중에 Join이 잘 됨
     for col in ["product_id", "parent_product_id", "component_product_id"]:
@@ -102,9 +96,198 @@ def _process_bom_info(df):
 
     return df[mapping.values()]
 
+def _get_merged_date(ws, cell, date_row, current_col, year, month):
+    """[Helper] 병합된 셀의 범위를 인식하여 날짜 계산"""
+    start_col = current_col
+    end_col = current_col
+
+    # 병합 셀 확인
+    for merged in ws.merged_cells.ranges:
+        if cell.coordinate in merged:
+            start_col = merged.min_col
+            end_col = merged.max_col
+            break
+    try:
+        start_val = ws.cell(row=date_row, column=start_col).value
+        end_val = ws.cell(row=date_row, column=end_col).value
+
+        if not start_val or not end_val: return None, None
+
+        # 엑셀의 날짜 데이터가 datetime 객체인 경우 replace 사용
+        # 정수형 날짜라면 datetime으로 변환하는 로직 추가
+        start_date = start_val.replace(year=year, month=month)
+        end_date = end_val.replace(year=year, month=month)
+        return start_date, end_date
+    except Exception:
+        return None, None
+
+def _process_production_plan(uploaded_file):
+    """
+    [Plan] 생산 계획 파싱 (OpenPyXL 사용)
+    주의: 이 함수는 DataFrame이 아닌 '파일 객체'를 입력받습니다.
+    """
+    wb = openpyxl.load_workbook(uploaded_file, data_only=True)
+    all_plans = []
+
+    for sheet_name in wb.sheetnames:
+        # 시트 필터링 (YYYYMM 형식 & 2025년 이후)
+        if not re.match(r'\d{6}', sheet_name): continue
+        if not re.match(r'(2025\d+)', sheet_name): continue
+
+        ws = wb[sheet_name]
+        header_val = ws['E3'].value
+        if not header_val: continue
+
+        # E3 셀이 날짜 형식이면 month/year 속성 사용
+        try:
+            month, year = header_val.month, header_val.year
+        except AttributeError:
+            # 날짜 형식이 아닐 경우 예외 처리 추가 바람
+            continue
+
+        cols_range = range(5, 12)  # E~K (일~토)
+
+        for week_idx in range(6):
+            date_row = 5 + (week_idx * 6)
+            semi_rows = [date_row + 1, date_row + 2]
+            pack_rows = [date_row + 3, date_row + 4]
+
+            # 빈 주차 확인
+            if not ws.cell(row=date_row, column=5).value and not ws.cell(row=date_row, column=11).value:
+                break
+
+            # 반제품 생산 계획
+            for r in semi_rows:
+                for c in cols_range:
+                    cell = ws.cell(row=r, column=c)
+                    if not cell.value: continue
+                    text = str(cell.value).strip()
+
+                    if "생산" not in text: continue
+
+                    start_date, end_date = _get_merged_date(ws, cell, date_row, c, year, month)
+                    if not start_date: continue
+
+                    # 생산                      리터럴 '생산' 문자열과 매칭
+                    # \s+                      공백 문자(스페이스, 탭 등) 1개 이상 (필수 구분자)
+                    # (#[\d-]+)                [Group 1] 일련번호: '#'으로 시작하고 숫자나 하이픈(-)이 옴
+                    # \s*                      공백 문자 0개 이상 (유연하게 처리)
+                    # ([가-힣a-zA-Z\s\/]+?)     [Group 2] 국가/유형: 한글, 영문, 공백, 슬래시(/) 포함
+                    # \s*                      공백 문자 0개 이상 (유연하게 처리)
+                    # (\d+)U?                  [Group 3] (옵션)수량: 숫자+U 형태
+                    # \s*                      공백 문자 0개 이상 (유연하게 처리)
+                    # (\(.* ?\))?              [Group 4] (옵션) 설명: 괄호 (...)로 묶인 추가 정보
+                    # (X[\d\s,a-fA-F]+)?       [Group 5] (옵션) 배치번호: 'X'로 시작하며 숫자, 문자 포함
+
+                    # Regex: 생산 #1-1 유럽 50U (설명) X12345
+                    pattern = r"생산\s+(#[\d-]+)\s*([가-힣a-zA-Z\s\/]+?)\s*(\d+)U?\s*(\(.*?\))?\s*(X[\d\s,a-fA-F]+)?"
+                    p_match = re.search(pattern, text)
+
+                    if p_match:
+                        all_plans.append({
+                            "plan_year": year,
+                            "serial_no": p_match.group(1),
+                            "plan_type": "반제품",
+                            "country": p_match.group(2),
+                            "quantity": p_match.group(3),
+                            "description": p_match.group(4) if p_match.group(4) else "",
+                            "start_date": start_date,
+                            "end_date": end_date,
+                            "batch_no": p_match.group(5)
+                        })
+
+            # 포장 계획
+            for r in pack_rows:
+                for c in cols_range:
+                    cell = ws.cell(row=r, column=c)
+                    if not cell.value: continue
+                    text = str(cell.value).strip()
+
+                    if "포장#" not in text: continue
+
+                    start_date, end_date = _get_merged_date(ws, cell, date_row, c, year, month)
+                    if not start_date: continue
+
+                    # 포장                      [Group 1] 리터럴 '포장'
+                    # #                        리터럴 '#' 문자 (포장 뒤에 붙음)
+                    # \s*                      공백 문자 0개 이상 (유연하게 처리)
+                    # ([\d-]*)?                [Group 2] (옵션) 일련번호: 숫자 또는 하이픈이 올 수 있음
+                    # \s*                      공백 문자 0개 이상 (유연하게 처리)
+                    # ([가-힣a-zA-Z\s\/]+?)     [Group 3] 국가: 한글, 영문, 공백, 슬래시. '?'(Non-greedy)를 써서 뒤에 오는 수량/설명 전까지만 잡음.
+                    # \s*                      공백 문자 0개 이상 (유연하게 처리)
+                    # (\d+)U?                  [Group 4] (옵션) 수량: 숫자+U 형태.
+                    # \s*                      공백 문자 0개 이상 (유연하게 처리)
+                    # (\(.*?\))?               [Group 5] (옵션) 설명: 괄호 (...) 안의 내용
+                    # \s*                      공백 문자 0개 이상 (유연하게 처리)
+                    # ([X\d,\s,a-fA-F]+)       [Group 6] 배치번호: 'X', 숫자, 쉼표, 공백 등이 포함된 문자열
+
+                    # Regex: 포장#1 미국 50U (설명) X12345
+                    pattern = r"(포장)#\s*([\d-]*)?\s*([가-힣a-zA-Z\s\/]+?)\s*(\d+U)?\s*(\(.*?\))?\s*([X\d,\s,a-fA-F]+)"
+                    p_match = re.search(pattern, text)
+
+                    if p_match:
+                        qty_val = p_match.group(4).replace("U", "") if p_match.group(4) else 0
+                        all_plans.append({
+                            "plan_year": year,
+                            "serial_no": p_match.group(2) if p_match.group(2) else "",
+                            "plan_type": "포장",
+                            "country": p_match.group(3),
+                            "quantity": qty_val,
+                            "description": p_match.group(5) if p_match.group(5) else "",
+                            "start_date": start_date,
+                            "end_date": end_date,
+                            "batch_no": p_match.group(6)
+                        })
+
+    if all_plans:
+        return pd.DataFrame(all_plans)
+    else:
+        return pd.DataFrame(columns=TABLE_SCHEMA["manufacture_plan"])
+
+
+# 테이블별 필요한 컬럼 정의 (Parsing Logic)
+# 아래 리스트에 정의된 컬럼만 추출하여 저장
+# 추후 LLM에 로드할 때 'description'을 drop 합니다.
+TABLE_SCHEMA = {
+    "product": [
+        "product_id", "edition_no", "is_attachment", "product_type", "plant_code",
+        # 보안상 LLM에 전달하지 않음
+        # "description",
+        "base_unit", "plant_status", "prod_storage_loc", "ep_storage_loc", "remaining_shelf_life_days",
+        # 이후 추가해야 하는 것
+        # "safety_stock", "lead_time_days", "standard_price", "currency",
+    ],
+    "vendor": [
+        "vendor_id",
+        # 보안상 LLM에 전달하지 않음
+        # "vendor_name",
+        "purchase_organization", "order_currency",
+    ],
+    "bom": [
+        "product_id", "standard_quantity", "parent_product_id", "component_product_id", "component_quantity", "level",
+    ],
+    "manufacture_plan": [
+        "plan_year", "serial_no", "plan_type", "counrty",
+        "quantity", "description", "start_date", "end_date", "batch_no",
+    ]
+    # 아직 미구현
+    # "purchase_history": [
+    #     "po_document_id", "po_item_id", "vendor_id", "product_id",
+    #     "po_date", "goods_receipt_date", "received_quantity",
+    #     "order_price", "total_amount_krw"
+    # ],
+    # 아직 미구현
+    # "inventory": [
+    #     "product_id", "plant_code", "storage_loc",
+    #     "stock_unrestricted", "stock_quality_inspection", "stock_blocked"
+    # ],
+    # 아직 미구현
+    # "plan": [
+    #     "product_id", "description", "", "", "vendor_name",
+    # ],
+}
 
 # 프로세서 등록 (Registry)
-
 FILE_PROCESSORS = {
     # (UI표시 이름) : (타겟 테이블, 처리 함수, 병합 전략)
     "자재 정보": ("product", _process_product_info, "UPSERT_ROWS", "product_id", ),
@@ -112,6 +295,7 @@ FILE_PROCESSORS = {
     "자재 에디션 숫자": ("product", _process_edition_info, "EXTEND_COLUMNS", "product_id", ),
     "공급업체 목록": ("vendor",_process_vendor_info,"UPSERT_ROWS", "vendor_id", ),
     "BOM": ("bom", _process_bom_info, "REPLACE_ALL", None),
+    "생산 계획": ("manufacture_plan", _process_production_plan, "REPLACE_ALL", None),
 }
 
 
@@ -127,9 +311,12 @@ def save_uploaded_file_by_type(uploaded_file, source_type):
     file_path = os.path.join(DATA_DIR, f"{target_table}.csv")
 
     try:
-        # 엑셀 로드 및 전처리
-        raw_df = pd.read_excel(uploaded_file)
-        new_df = processor_func(raw_df)
+        # 엑셀 파일 로드 및 전처리
+        if source_type == "생산 계획":
+            new_df = processor_func(uploaded_file)  # openpyxl은 파일 객체를 직접 필요로 함
+        else:
+            raw_df = pd.read_excel(uploaded_file)
+            new_df = processor_func(raw_df)
 
         # 단순 교체 전략 (BOM 등 PK가 없는 경우)
         if strategy == "REPLACE_ALL":
@@ -195,6 +382,36 @@ def save_uploaded_file_by_type(uploaded_file, source_type):
 
     except Exception as e:
         return False, f"오류 발생: {str(e)}"
+
+
+def load_master_data():
+    """
+    실제 CSV 파일을 로드하여 데이터프레임 딕셔너리로 반환
+    CSV를 로드하되, LLM용(Secure) 데이터와 UI용(Mapping) 데이터를 분리하여 반환
+    """
+    db = {}
+
+    try:
+        # TABLE_SCHEMA에 정의된 테이블들을 순회하며 로드
+        for table_name in TABLE_SCHEMA.keys():
+            file_path = os.path.join(DATA_DIR, f"{table_name}.csv")
+
+            if os.path.exists(file_path):
+                # 원본 데이터 그대로 로드 (Description 포함)
+                df = pd.read_csv(file_path)
+
+                # 데이터 타입 보정 (예: 날짜, 숫자 등)이 필요하면 여기서 수행
+                db[table_name] = df
+            else:
+                # 파일이 없으면 빈 DataFrame 생성
+                db[table_name] = pd.DataFrame(columns=TABLE_SCHEMA.get(table_name, []))
+
+        return db
+
+    except Exception as e:
+        print(f"데이터 로드 중 오류: {e}")
+        return {}
+
 
 # # 명시적 매핑 정의 (현업 용어 -> 시스템 변수)
 # COLUMN_MAPPING = {
@@ -284,69 +501,3 @@ def save_uploaded_file_by_type(uploaded_file, source_type):
 #         "공급업체": "vendor_name"
 #     }
 # }
-
-# # 테이블별 필요한 컬럼 정의 (Parsing Logic)
-# # 아래 리스트에 정의된 컬럼만 추출하여 저장
-# # 추후 LLM에 로드할 때 'description'을 drop 합니다.
-TABLE_SCHEMA = {
-    "product": [
-        "product_id", "edition_no", "is_attachment", "product_type", "plant_code",
-        # 보안상 LLM에 전달하지 않음
-        # "description",
-        "base_unit", "plant_status", "prod_storage_loc", "ep_storage_loc", "remaining_shelf_life_days",
-        # 이후 추가해야 하는 것
-        # "safety_stock", "lead_time_days", "standard_price", "currency",
-    ],
-    "vendor": [
-        "vendor_id",
-        # 보안상 LLM에 전달하지 않음
-        # "vendor_name",
-        "purchase_organization", "order_currency",
-    ],
-    "bom": [
-        "product_id", "standard_quantity", "parent_product_id", "component_product_id", "component_quantity", "level",
-    ],
-    # 아직 미구현
-    # "purchase_history": [
-    #     "po_document_id", "po_item_id", "vendor_id", "product_id",
-    #     "po_date", "goods_receipt_date", "received_quantity",
-    #     "order_price", "total_amount_krw"
-    # ],
-    # 아직 미구현
-    # "inventory": [
-    #     "product_id", "plant_code", "storage_loc",
-    #     "stock_unrestricted", "stock_quality_inspection", "stock_blocked"
-    # ],
-    # 아직 미구현
-    # "plan": [
-    #     "product_id", "description", "", "", "vendor_name",
-    # ],
-}
-
-def load_master_data():
-    """
-    실제 CSV 파일을 로드하여 데이터프레임 딕셔너리로 반환
-    CSV를 로드하되, LLM용(Secure) 데이터와 UI용(Mapping) 데이터를 분리하여 반환
-    """
-    db = {}
-
-    try:
-        # TABLE_SCHEMA에 정의된 테이블들을 순회하며 로드
-        for table_name in TABLE_SCHEMA.keys():
-            file_path = os.path.join(DATA_DIR, f"{table_name}.csv")
-
-            if os.path.exists(file_path):
-                # 원본 데이터 그대로 로드 (Description 포함)
-                df = pd.read_csv(file_path)
-
-                # 데이터 타입 보정 (예: 날짜, 숫자 등)이 필요하면 여기서 수행
-                db[table_name] = df
-            else:
-                # 파일이 없으면 빈 DataFrame 생성
-                db[table_name] = pd.DataFrame(columns=TABLE_SCHEMA.get(table_name, []))
-
-        return db
-
-    except Exception as e:
-        print(f"데이터 로드 중 오류: {e}")
-        return {}
