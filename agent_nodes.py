@@ -2,14 +2,13 @@ import pandas as pd
 from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
 from langchain_core.runnables import chain
 
-# 모듈 임포트
 import data_loader
+from prompt import CODE_GEN_PROMPT
 from agent_state import AgentState
 from agent_config import llm, chain_prompt_llm
 
 # Python 실행 환경 준비 - 내부 LLM을 사용하는 경우 모두 사용해도 됨
 # RUN_CONTEXT = {"DB": data_loader.load_master_data(), "pd": pd}
-
 
 @chain
 def reasoner(state: AgentState) -> dict:
@@ -37,26 +36,7 @@ def code_generator(state: AgentState) -> dict:
     generated_code = state.get("generated_code")
 
     # 코드 생성을 위한 가이드라인 제공
-    code_gen_prompt = """
-        당신은 생산 관리 데이터를 분석하는 Python 전문가입니다.
-        주어진 질문을 해결하기 위해 'DB' 딕셔너리에 있는 Pandas DataFrame을 사용하는 코드를 작성하세요.
-    
-        [매우 중요한 제약 사항]
-        1. **절대 `matplotlib`, `seaborn`, `plotly` 등의 시각화 라이브러리를 사용하지 마십시오.**
-        2. `plt.show()`, `fig.show()` 등의 코드를 작성하면 오답 처리됩니다.
-        3. 대신, 그래프를 그릴 **'데이터(DataFrame)' 자체를 가공**하여 `result` 변수에 할당하십시오.
-        4. 답변 텍스트에 "그래프를 그렸습니다"라고 말하지 말고, "데이터를 추출했습니다"라고 하십시오. 시각화는 시스템이 자동으로 수행합니다.
-    
-        [코드 작성 예시]
-        # (O) 좋은 예
-        df_res = DB['plan'].groupby('date').sum()
-        result = {"type": "line", "data": df_res}
-    
-        # (X) 나쁜 예
-        import matplotlib.pyplot as plt
-        plt.plot(df)
-        plt.show()
-    """
+    code_gen_prompt = CODE_GEN_PROMPT
 
     if last_error and generated_code:
         user_msg = f"이전 코드 에러 발생:\n{last_error}\n코드를 수정해주세요."
