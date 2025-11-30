@@ -13,6 +13,10 @@ FILE_PROCESSORS = {
     "BOM": ("bom", processors.process_bom_info, "REPLACE_ALL", None),
     "생산 계획": ("production_plan", processors.process_production_plan, "REPLACE_ALL", None),
     "자재수불부": ("material_ledger", processors.process_material_ledger_info, "REPLACE_ALL", None),
+    "입고이력": ("good_receipt", processors.process_good_receipt_info, "REPLACE_ALL", None),
+    "구매오더": ("purchase_order", processors.process_purchase_order_info, "REPLACE_ALL", None),
+    "배치재고": ("batch_stock", processors.process_batch_stock_info, "REPLACE_ALL", None),
+    "창고재고": ("warehouse_stock", processors.process_warehouse_stock_info, "REPLACE_ALL", None),
 }
 
 

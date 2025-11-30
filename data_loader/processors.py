@@ -161,6 +161,88 @@ def process_material_ledger_info(df):
     return df[mapping.values()]
 
 
+def process_good_receipt_info(df):
+    """[Good_Receipt] 입고 이력 정보(상세 내역) 추가"""
+    mapping = {
+        "작업일시": "work_datetime",
+        "구매 문서 번호": "po_id",
+        "구매 문서 품목 번호": "item_no",
+        "자재 번호": "product_id",
+        "배치번호": "batch_no",
+        "제조번호": "manufacturing_no",
+        "제조일자": "manufacturing_date",
+        "유효일자": "expiration_date",
+        "종입고수량": "receipt_qty",
+        "검사로트번호": "inspection_lot_no",
+    }
+    df.rename(columns=mapping, inplace=True)
+    for col in ["product_id", "po_id"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+    return df[mapping.values()]
+
+
+def process_purchase_order_info(df):
+    """[Purchase_Order] 구매 오더 정보 추가"""
+    mapping = {
+        "구매 문서": "po_id",
+        "공급업체": "vendor_id",
+        "자재": "product_id",
+        "증빙일": "posting_date",
+        "오더 수량": "order_qty",
+        "오더 정가": "order_price",
+    }
+    df.rename(columns=mapping, inplace=True)
+    for col in ["product_id", "po_id", "vendor_id"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+    return df[mapping.values()]
+
+
+def process_batch_stock_info(df):
+    """[Batch_Stock] 유효 기한 정보 추가"""
+    mapping = {
+        "자재": "product_id",
+        "제조일": "manufacture_date",
+        "유효 기한": "expiration_date",
+        "배치": "batch_no",
+        "가용": "available_qty",
+        "품질 검사": "quality_inspection_qty",
+        "보류재고": "blocked_stock",
+        "가용재고 값": "available_stock_value",
+        "품질검사재고 값": "quality_inspection_stock_value",
+        "보류재고 값": "blocked_stock_value",
+        "입고일": "receipt_date",
+    }
+    df.rename(columns=mapping, inplace=True)
+    if "product_id" in df.columns:
+        df["product_id"] = df["product_id"].astype(str).str.strip()
+    return df[mapping.values()]
+
+
+def process_warehouse_stock_info(df):
+    """[Warehouse_Stock] 현재 스냅샷 정보 추가"""
+    mapping = {
+        "자재": "product_id",
+        "배치": "batch_no",
+        "가용": "unrestricted_qty",
+        "품질 검사": "inspection_qty",
+        "사용 제한 재고": "restricted_stock",
+        "보류재고": "blocked_qty",
+        "반품": "return_qty",
+        "평가 입고 보류 재고": "valuated_blocked_stock",
+        "사용 용기": "issued_container",
+        "운송 중 재고": "in_transit_stock",
+        "운송 및 전송": "shipment_and_transfer",
+        "재고 세그먼트": "stock_segment",
+        "이전중 (플랜트)": "plant_transfer_in_progress",
+    }
+    df.rename(columns=mapping, inplace=True)
+    if "product_id" in df.columns:
+        df["product_id"] = df["product_id"].astype(str).str.strip()
+    return df[mapping.values()]
+
+
 def process_production_plan(uploaded_file):
     """
     [Plan] 생산 계획 파싱 (OpenPyXL 사용)
