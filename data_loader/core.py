@@ -118,3 +118,16 @@ def load_master_data():
     except Exception as e:
         print(f"데이터 로드 중 오류: {e}")
         return {}
+
+
+def get_database_schema_string():
+    """보안을 위해 실제 데이터가 아닌 '테이블명'과 '컬럼명', '데이터 타입'만 추출하여 문자열로 반환"""
+    schema_str = "Available Tables and Columns:\n"
+
+    # TABLE_SCHEMA는 이미 정의되어 있으므로 이를 활용
+    for table, columns in TABLE_SCHEMA.items():
+        schema_str += f"- Table '{table}': {columns}\n"
+        # 필요하다면 컬럼의 의미(주석)만 추가
+        # 샘플 데이터 절대 넣지 않기
+
+    return schema_str
