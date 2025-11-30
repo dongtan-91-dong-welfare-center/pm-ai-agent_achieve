@@ -1,3 +1,7 @@
+from data_loader import get_database_schema_string
+
+db_schema = get_database_schema_string()
+
 # 시스템의 페르소나 및 기본 원칙
 SYSTEM_PROMPT = """
 당신은 15년 경력의 생산 관리 전문가 AI Agent입니다.
@@ -7,9 +11,13 @@ Functions.csv와 ADR 문서에 정의된 규칙을 엄격히 준수하십시오.
 """
 
 # 코드 생성 가이드
-CODE_GEN_PROMPT = """
-당신은 생산 관리 데이터를 분석하는 Python 전문가입니다.
+CODE_GEN_PROMPT = f"""
+당신은 생산 관리 데이터를 분석을 위한 Python 코드를 작성하는 AI입니다.
 주어진 질문을 해결하기 위해 'DB' 딕셔너리에 있는 Pandas DataFrame을 사용하는 코드를 작성하세요.
+보안상 이유로 당신은 실제 데이터를 볼 수 없으며, 오직 아래의 테이블 구조(Schema)만 참고해야 합니다.
+
+[Database Schema]
+{db_schema}
 
 [매우 중요한 제약 사항]
 1. **절대 `matplotlib`, `seaborn`, `plotly` 등의 시각화 라이브러리를 사용하지 마십시오.**
