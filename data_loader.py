@@ -99,6 +99,67 @@ def _process_bom_info(df):
 
     return df[mapping.values()]
 
+
+def _process_material_ledger_info(df):
+    """[material_ledger] 자재수불부(기간별 흐름)"""
+    mapping = {
+        "자재": "product_id",
+        "Cncy": "currency",
+
+        # material_ledger
+        "표준원가": "standard_price",
+        "기초(수량)": "opening_qty",
+        "기초(금액)합계": "opening_amount",
+
+        "구매입고(수량)": "receipt_purchase_qty",
+        "구매입고(금액)": "receipt_purchase_price",
+        "구매입고(가격차이)": "receipt_purchase_price_diff",
+
+        "생산입고(수량)": "production_receipt_qty",
+        "생산입고(금액)": "production_receipt_price",
+        "생산입고(가격차이)": "production_receipt_price_diff",
+
+        "기타입고(수량)": "other_receipt_qty",
+        "기타입고(금액)": "other_receipt_price",
+        "기타입고(가격차이)": "other_receipt_price_diff",
+
+        "가격 차이": "price_diff",
+
+        "입고(수량)합계": "total_receipt_qty",
+        "입고(금액)합계": "total_receipt_amount",
+        "입고(가격차이)합계": "total_receipt_price_diff",
+
+        "생산출고(수량)": "production_issue_qty",
+        "생산출고(금액)": "production_issue_price",
+        "생산출고(가격차이)": "production_issue_price_diff",
+
+        "코스트센터출고(수량)": "cost_center_issue_qty",
+        "코스트센터출고(금액)": "cost_center_issue_price",
+        "코스트센터출고(가격차이)": "cost_center_issue_price_diff",
+
+        "기타출고(수량)": "other_issue_qty",
+        "기타출고(금액)": "other_issue_price",
+        "기타출고(가격차이)": "other_issue_price_diff",
+
+        "소비(수량)합계": "total_issue_qty",
+        "소비(금액)합계": "total_issue_amount",
+        "소비(가격차이)합계": "total_issue_price_diff",
+
+        # "총 가격 차이": "total_price_diff",
+
+        "기말(수량)": "closing_qty",
+        "기말(금액)합계": "closing_amount",
+    }
+
+    df.rename(columns=mapping, inplace=True)
+    # 데이터 타입 보정 (Agent가 Join할 때 중요)
+    # 외래키(FK) 역할을 하는 컬럼들은 문자열로 통일해줘야 나중에 Join이 잘 됨
+    if "product_id" in df.columns:
+        df["product_id"] = df["product_id"].astype(str).str.strip()
+
+    return df[mapping.values()]
+
+
 def _get_merged_date(ws, cell, date_row, current_col, year, month):
     """[Helper] 병합된 셀의 범위를 인식하여 날짜 계산"""
     start_col = current_col
@@ -257,6 +318,7 @@ FILE_PROCESSORS = {
     "공급업체 목록": ("vendor",_process_vendor_info,"UPSERT_ROWS", "vendor_id", ),
     "BOM": ("bom", _process_bom_info, "REPLACE_ALL", None),
     "생산 계획": ("manufacture_plan", _process_production_plan, "REPLACE_ALL", None),
+    "자재수불부": ("material_ledger", _process_material_ledger_info, "REPLACE_ALL", None),
 }
 
 
@@ -372,93 +434,3 @@ def load_master_data():
     except Exception as e:
         print(f"데이터 로드 중 오류: {e}")
         return {}
-
-
-# # 명시적 매핑 정의 (현업 용어 -> 시스템 변수)
-# COLUMN_MAPPING = {
-#     "product": {
-#         # product.xlsx
-#         "자재 유형": "product_type",
-#         "플랜트": "plant_code",
-#         "자재": "product_id",
-#         "자재 내역": "description",
-#         "기본 단위": "base_unit",
-#         "플랜트별 자재 상태": "plant_status",
-#         "생산 저장 위치": "prod_storage_loc",
-#         "EP 저장 위치": "ep_storage_loc",
-#         "잔여 유효 기간": "remaining_shelf_life_days",
-#         "총 셀프 라이프": "total_shelf_life_days",
-#         #
-#         "자재그룹내역": "",
-#         "Edition Seq.": "edition_seq",
-#         "Edition No.": "edition_no",
-#         "유효 기한": "expiration date",
-#         "외부 착인": "",
-#         # "가용": "stock_available",
-#         # "가용재고 값": "stock_available_value",
-#         # "품질 검사": "stock_quality_inspection",
-#         # "품질검사재고 값": "stock_quality_inspection_value",
-#         # "보류 재고": "stock_blocked",
-#         # "보류 재고 값": "stock_blocked_value",
-#     },
-#     "vendor": {
-#         "공급업체": "vendor_id",
-#         "공급업체 이름": "vendor_name",
-#         "구매 조직": "organization",
-#         "오더 통화": "order_currency"
-#     },
-#     "bom": {
-#         "자재번호(Root)": "parent_product_id",
-#         "구성요소": "component_product_id",
-#         "구성부품수량": "component_quantity",
-#         "기준 수량": "standard_quantity",
-#         "상위자재": "parent_product_id",
-#         "레벨": "bom_level",
-#     },
-#     "purchase_history": {
-#         # "이력ID": "purchase_history_id",    # db를 추가하면 사용
-#         "구매문서번호": "po_document_id",
-#         "구매품목": "po_item_id",
-#         "구매업체": "vendor_id",
-#         "자재코드": "product_id",
-#         "입고일자": "goods_receipt_date",
-#         "이동유형": "movement_type",
-#         "오더수량": "order_quantity",
-#         "Info.Rec.수정일": "info_record_updated_at",
-#         "OLD값": "old_value",
-#         "NEW값": "new_value",
-#         "마스터단가": "master_price",
-#         "마스터단가통화": "master_price_currency",
-#         "오더단가": "order_price",
-#         "통화": "order_currency",
-#         "단가단위수량": "price_unit",
-#         "입고수량": "received_quantity",
-#         "입고금액(발주통화)": "received_value_local_currency",
-#         "제판비": "printing_plate_cost",
-#         "동판비": "copper_plate_cost",
-#         "입고총금액(발주통화)": "total_received_value_local_currency",
-#         "입고금액(원화)": "received_value_krw",
-#         "입고총금액(원화)": "total_received_value_krw",
-#     },
-#     "expiration_date": {
-#         "자재": "product_id",
-#         "제조일": "",
-#         "유효 기한": "",
-#         "배치": "",
-#         "가용": "",
-#         "품질 검사": "",
-#         "보류재": "",
-#         "자재 그룹": "",
-#         "가용재고 값": "",
-#         "품질검사재고 값": "",
-#         "보류재고 값": "",
-#         "입고일": "",
-#     },
-#     "plan": {
-#         "품목코드": "product_id",
-#         "품목명": "description",
-#         "수량": "",
-#         "납품일자": "",
-#         "공급업체": "vendor_name"
-#     }
-# }
