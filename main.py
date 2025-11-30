@@ -2,8 +2,7 @@ import streamlit as st
 import pandas as pd
 from agent_graph import graph
 from langchain_core.messages import HumanMessage, AIMessage
-import data_loader
-from data_loader import FILE_PROCESSORS
+from data_loader import TABLE_SCHEMA, save_uploaded_file_by_type, load_master_data, FILE_PROCESSORS
 
 
 # 공통 함수 - 시각화 렌더러
@@ -69,7 +68,7 @@ with st.sidebar:
 
         if uploaded_file and st.button("데이터 추가"):
             with st.spinner("데이터 파싱 및 저장 중..."):
-                success, msg = data_loader.save_uploaded_file_by_type(uploaded_file, source_type)
+                success, msg = save_uploaded_file_by_type(uploaded_file, source_type)
                 if success:
                     st.success(msg)
                     # Streamlit 앱을 다시 실행하여 변경된 세션 상태를 화면에 반영합니다.
@@ -83,7 +82,7 @@ with st.sidebar:
     st.subheader("데이터 탐색기")
 
     # 현재 로드된 데이터 가져오기
-    current_db = data_loader.load_master_data()
+    current_db = load_master_data()
 
     if current_db:
         selected_table = st.selectbox("조회할 테이블", list(current_db.keys()))
