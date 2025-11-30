@@ -16,7 +16,8 @@ def _process_product_info(df):
     mapping = {
         "자재 유형": "product_type", "플랜트": "plant_code", "자재": "product_id", "자재 내역": "description",
         "기본 단위": "base_unit", "플랜트별 자재 상태": "plant_status", "생산 저장 위치": "prod_storage_loc",
-        "EP 저장 위치": "ep_storage_loc", "잔여 유효 기간": "remaining_shelf_life_days", "총 셀프 라이프": "total_shelf_life_days",
+        "EP 저장 위치": "ep_storage_loc", "잔여 유효 기간": "remaining_shelf_life_days",
+        "총 셀프 라이프": "total_shelf_life_days", "검사설정": "inspection_setting",
     }
     df.rename(columns=mapping, inplace=True)
 
@@ -58,6 +59,8 @@ def _process_edition_info(df):
     """
     mapping = {
         "자재": "product_id",
+        "자재그룹": "product_group",
+        "자재그룹 내역": "product_group_description",
         "Edition No.": "edition_no",
     }
     df.rename(columns=mapping, inplace=True)
@@ -70,7 +73,7 @@ def _process_vendor_info(df):
     mapping = {
         "공급업체": "vendor_id",
         "공급업체 이름": "vendor_name",
-        "구매 조직": "purchase_organization",
+        "구매 조직": "purchase_org",
         "오더 통화": "order_currency"
     }
     df.rename(columns=mapping, inplace=True)
@@ -81,11 +84,11 @@ def _process_bom_info(df):
     """[BOM] 자재 명세서 (PK 없음 / 단순 리스트)"""
     mapping = {
         "자재번호(Root)": "product_id",
-        "기준 수량": "standard_quantity",
+        "기준 수량": "standard_qty",
         "레벨": "level",
         "상위자재": "parent_product_id",
         "구성요소": "component_product_id",
-        "구성부품수량": "component_quantity",
+        "구성부품수량": "component_qty",
     }
     df.rename(columns=mapping, inplace=True)
     # 데이터 타입 보정 (Agent가 Join할 때 중요)
@@ -185,12 +188,11 @@ def _process_production_plan(uploaded_file):
 
                     if p_match:
                         all_plans.append({
-                            "plan_year": year,
                             "serial_no": p_match.group(1),
-                            "plan_type": "반제품",
+                            "material_type": "반제품",
                             "country": p_match.group(2),
                             "quantity": p_match.group(3),
-                            "description": p_match.group(4) if p_match.group(4) else "",
+                            "remark": p_match.group(4) if p_match.group(4) else "",
                             "start_date": start_date,
                             "end_date": end_date,
                             "batch_no": p_match.group(5)
@@ -222,18 +224,18 @@ def _process_production_plan(uploaded_file):
                     # ([X\d,\s,a-fA-F]+)       [Group 6] 배치번호: 'X', 숫자, 쉼표, 공백 등이 포함된 문자열
 
                     # Regex: 포장#1 미국 50U (설명) X12345
-                    pattern = r"(포장)#\s*([\d-]*)?\s*([가-힣a-zA-Z\s\/]+?)\s*(\d+U)?\s*(\(.*?\))?\s*([X\d,\s,a-fA-F]+)"
+                    # pattern = r"(포장)#\s*([\d-]*)?\s*([가-힣a-zA-Z\s\/]+?)\s*(\d+U)?\s*(\(.*?\))?\s*([X\d,\s,a-fA-F]+)"
+                    pattern = r"(포장)#\s*([\d-]*)?\s*([가-힣a-zA-Z\s\/]+?)\s*(\d+)U?\s*(\(.*\))?\s*([XZ\d,\s,a-fA-F]+)"
                     p_match = re.search(pattern, text)
 
                     if p_match:
                         qty_val = p_match.group(4).replace("U", "") if p_match.group(4) else 0
                         all_plans.append({
-                            "plan_year": year,
                             "serial_no": p_match.group(2) if p_match.group(2) else "",
-                            "plan_type": "포장",
+                            "material_type": "포장",
                             "country": p_match.group(3),
                             "quantity": qty_val,
-                            "description": p_match.group(5) if p_match.group(5) else "",
+                            "remark": p_match.group(5) if p_match.group(5) else "",
                             "start_date": start_date,
                             "end_date": end_date,
                             "batch_no": p_match.group(6)
@@ -245,47 +247,6 @@ def _process_production_plan(uploaded_file):
         return pd.DataFrame(columns=TABLE_SCHEMA["manufacture_plan"])
 
 
-# 테이블별 필요한 컬럼 정의 (Parsing Logic)
-# 아래 리스트에 정의된 컬럼만 추출하여 저장
-# 추후 LLM에 로드할 때 'description'을 drop 합니다.
-TABLE_SCHEMA = {
-    "product": [
-        "product_id", "edition_no", "is_attachment", "product_type", "plant_code",
-        # 보안상 LLM에 전달하지 않음
-        # "description",
-        "base_unit", "plant_status", "prod_storage_loc", "ep_storage_loc", "remaining_shelf_life_days",
-        # 이후 추가해야 하는 것
-        # "safety_stock", "lead_time_days", "standard_price", "currency",
-    ],
-    "vendor": [
-        "vendor_id",
-        # 보안상 LLM에 전달하지 않음
-        # "vendor_name",
-        "purchase_organization", "order_currency",
-    ],
-    "bom": [
-        "product_id", "standard_quantity", "parent_product_id", "component_product_id", "component_quantity", "level",
-    ],
-    "manufacture_plan": [
-        "plan_year", "serial_no", "plan_type", "counrty",
-        "quantity", "description", "start_date", "end_date", "batch_no",
-    ]
-    # 아직 미구현
-    # "purchase_history": [
-    #     "po_document_id", "po_item_id", "vendor_id", "product_id",
-    #     "po_date", "goods_receipt_date", "received_quantity",
-    #     "order_price", "total_amount_krw"
-    # ],
-    # 아직 미구현
-    # "inventory": [
-    #     "product_id", "plant_code", "storage_loc",
-    #     "stock_unrestricted", "stock_quality_inspection", "stock_blocked"
-    # ],
-    # 아직 미구현
-    # "plan": [
-    #     "product_id", "description", "", "", "vendor_name",
-    # ],
-}
 
 # 프로세서 등록 (Registry)
 FILE_PROCESSORS = {
