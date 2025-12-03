@@ -28,7 +28,7 @@ CODE_GEN_PROMPT = f"""
 [코드 작성 예시]
 # (O) 좋은 예
 df_res = DB['plan'].groupby('date').sum()
-result = {"type": "line", "data": df_res}
+result = dict("type": "line", "data": df_res)
 
 # (X) 나쁜 예
 import matplotlib.pyplot as plt

@@ -1,4 +1,80 @@
 import streamlit as st
+
+PRIMARY = "#d78632"  # Daewoong Orange
+
+st.markdown(
+    f"""
+    <style>
+    /* ------------------------------
+       메인 제목 색상 (h1, h2 등)
+    ------------------------------ */
+    h1, h2, h3 {{
+        color: #494c50;
+    }}
+    /* ------------------------------
+       버튼
+    ------------------------------ */
+    div.stButton > button {{
+        border: 1px solid {PRIMARY};
+        color: {PRIMARY};
+        background-color: white;
+        border-radius: 8px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+    }}
+    div.stButton > button:hover {{
+        border-color: {PRIMARY};
+        background-color: {PRIMARY};
+        color: white;
+    }}
+
+    /* ------------------------------
+       Selectbox / Multiselect
+    ------------------------------ */
+    div[data-baseweb="select"] > div {{
+        border: 1px solid {PRIMARY} !important;
+        border-radius: 6px !important;
+    }}
+    div[data-baseweb="select"] svg {{
+        color: {PRIMARY} !important;
+    }}
+    div[data-baseweb="select"] > div:hover {{
+        box-shadow: 0 0 0 1px {PRIMARY};
+    }}
+
+    /* ------------------------------
+       Slider 색상
+    ------------------------------ */
+    .stSlider [data-baseweb="slider"] > div[role="slider"] {{
+        background-color: {PRIMARY} !important;
+        border: 2px solid {PRIMARY} !important;
+    }}
+    .stSlider [data-baseweb="track"] > div {{
+        background-color: {PRIMARY} !important;
+    }}
+    /* ------------------------------
+       사이드바
+    ------------------------------ */
+    section[data-testid="stSidebar"] {{
+        background-color: #f4f5f9;
+    }}
+    section[data-testid="stSidebar"] h2, 
+    section[data-testid="stSidebar"] h3 {{
+        color: #494c50;
+    }}
+
+    /* ------------------------------
+       알림 박스 (st.success / st.warning 등)
+    ------------------------------ */
+    div[data-testid="stAlert"] {{
+        border-left: 4px solid {PRIMARY};
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+import streamlit as st
 import pandas as pd
 from agent_graph import graph
 from langchain_core.messages import HumanMessage, AIMessage
