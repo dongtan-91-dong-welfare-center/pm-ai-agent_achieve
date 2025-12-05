@@ -1,4 +1,9 @@
 import streamlit as st
+import pandas as pd
+from langchain_core.messages import HumanMessage, AIMessage
+
+# 페이지 설정
+st.set_page_config(page_title="생산 관리 AI Agent", layout="wide")
 
 PRIMARY = "#d78632"  # Daewoong Orange
 
@@ -74,16 +79,33 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-import streamlit as st
-import pandas as pd
-from agent_graph import graph
-from langchain_core.messages import HumanMessage, AIMessage
-from data_loader import TABLE_SCHEMA, save_uploaded_file_by_type, load_master_data, FILE_PROCESSORS
+# heavy resource 로딩( 캐시 적용 지연 로딩)
+@st.cache_resource(show_spinner="AI Agent를 초기화 중입니다...")
+def get_agent_graph():
+    """
+    무거운 라이브러리(LangGraph, LangChain 등)와 그래프 빌드 로직을
+    이 함수 안에서 수행하여, 앱 초기 로딩 속도를 확보합니다.
+    """
+    # 여기서 import를 수행하여 Top-level import 지연 효과
+    from agent_graph import graph
+    return graph
+
+@st.cache_resource
+def get_data_loader_modules():
+    """
+    데이터 로더 모듈도 필요할 때 로드합니다.
+    """
+    from data_loader import TABLE_SCHEMA, save_uploaded_file_by_type, load_master_data, FILE_PROCESSORS
+    return TABLE_SCHEMA, save_uploaded_file_by_type, load_master_data, FILE_PROCESSORS
+
+# 데이터 로더 모듈 가져오기
+_, save_uploaded_file_by_type, load_master_data, FILE_PROCESSORS = get_data_loader_modules()
 
 
 # 공통 함수 - 시각화 렌더러
 def render_analysis_result(result_data):
     """
+    [유틸리티 함수]
     Backend에서 전달받은 데이터(Dict/DataFrame)를 시각화합니다.
     채팅 히스토리 출력 시와 실시간 스트리밍 시 공통으로 사용됩니다.
     """
@@ -125,9 +147,6 @@ def render_analysis_result(result_data):
                 st.dataframe(df_viz, use_container_width=True)
     else:
         st.caption("※ 시각화할 데이터가 없습니다.")
-
-# 페이지 설정
-st.set_page_config(page_title="생산 관리 AI Agent", layout="wide")
 
 # [사이드바] 데이터 베이스 관리
 with st.sidebar:
@@ -171,11 +190,11 @@ with st.sidebar:
         st.warning("데이터가 없습니다.")
 
 # [메인] 채팅 인터페이스
+st.title("생산 관리 AI Agent")
+
 # 세션 상태 초기화
 if "messages" not in st.session_state:
     st.session_state["messages"] = []
-
-st.title("생산 관리 AI Agent")
 
 # 기존 채팅 히스토리 렌더링
 for msg in st.session_state.messages:
@@ -188,6 +207,14 @@ for msg in st.session_state.messages:
             # 저장된 시각화 데이터가 있는지 확인
             if "artifact" in msg.additional_kwargs:
                 render_analysis_result(msg.additional_kwargs["artifact"])
+
+
+# 이 시점에 graph를 로드합니다. 처음 실행 시에만 로딩 시간이 소요됩니다.
+try:
+    graph = get_agent_graph()
+except Exception as e:
+    st.error(f"AI Agent 초기화 실패: {str(e)}")
+    st.stop()
 
 # Langgraph 실행 및 응답 처리
 user_input = st.chat_input("생산 계획 ID(PL-2024-001)에 대한 소요량을 분석해줘.")
@@ -229,7 +256,7 @@ if user_input:
             # Finalize Order
             if "finalize_order" in event:
                 msg = event["finalize_order"]["messages"][-1]
-                full_response += f"\n\n✅ {msg.content}"
+                full_response += f"\n\n {msg.content}"
                 message_placeholder.markdown(full_response)
 
             # Code Executor (실시간 시각화 및 데이터 캡처)
@@ -240,10 +267,6 @@ if user_input:
                 analysis_data = node_output.get("analysis_data", {})
                 last_result = analysis_data.get("last_run_result")
 
-                # [디버깅] 데이터가 도착했다면 로그를 띄웁니다.
-                if last_result:
-                    print("✅ 시각화 데이터 수신 성공!")  # 터미널 로그 확인용
-
                 if last_result is not None:
                     # 화면 렌더링 (함수 호출)
                     render_analysis_result(last_result)
@@ -251,13 +274,21 @@ if user_input:
                     # 데이터 캡처 (저장용)
                     analysis_artifact = last_result
 
-                # 만약 last_result가 없으면 에러 메시지를 표시해봅니다.
+                # 만약 last_result가 없으면 에러 메시지를 표시
                 else:
-                    st.warning("⚠️ Code Executor가 실행되었으나 결과 데이터(last_run_result)가 비어있습니다.")
+                    st.warning("Code Executor가 실행되었으나 결과 데이터(last_run_result)가 비어있습니다.")
                     with st.expander("Node Output 확인"):
                         st.write(node_output)
 
         message_placeholder.markdown(full_response)
 
-    # AI 응답 저장
-    st.session_state["messages"].append(AIMessage(content=full_response))
+        # AI 응답 저장 (artifact 포함)
+        ai_msg = AIMessage(content=full_response)
+        # 마지막 실행 결과가 있다면 artifact로 저장
+        if 'analysis_artifact' in locals():
+            ai_msg.additional_kwargs["artifact"] = analysis_artifact
+
+        st.session_state["messages"].append(ai_msg)
+
+    # # AI 응답 저장
+    # st.session_state["messages"].append(AIMessage(content=full_response))
