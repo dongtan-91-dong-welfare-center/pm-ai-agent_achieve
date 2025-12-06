@@ -330,28 +330,28 @@ def generate_purchase_prediction(dummy_arg: str = "") -> str:
     return f"발주 예측 파일 생성이 완료되었습니다.\n경로: {file_path}\n총 {len(final_df)}건의 발주 필요 항목이 도출되었습니다."
 
 
-@tool
-def analyze_long_term_stock() -> str:
-    """
-    장기 체류 재고(Batch Stock 기준)를 분석합니다.
-    유효기간(expiration_date)이나 제조일(manufacture_date)을 기준으로 판단합니다.
-    """
-    batch_df = DB['batch_stock']
-    product_df = DB['product']
-
-    if batch_df.empty:
-        return "배치 재고 데이터가 없습니다."
-
-    # 예시 분석: 유효기간이 지났거나 임박한 재고
-    # (실제 날짜 비교 로직 필요, 여기서는 데이터 조회만 수행)
-
-    # 필요한 컬럼만 조인하여 보여줌
-    # product 테이블의 'remaining_shelf_life' 등 정보와 결합 가능
-
-    days = prod.iloc[0]['long_term_stock_days']
-    if days == 0 or pd.isna(days):
-        return "Master Data에 기준일 없음. SOP 문서 탐색 필요."
-    return f"기준일: {days}일"
+# @tool
+# def analyze_long_term_stock() -> str:
+#     """
+#     장기 체류 재고(Batch Stock 기준)를 분석합니다.
+#     유효기간(expiration_date)이나 제조일(manufacture_date)을 기준으로 판단합니다.
+#     """
+#     batch_df = DB['batch_stock']
+#     product_df = DB['product']
+#
+#     if batch_df.empty:
+#         return "배치 재고 데이터가 없습니다."
+#
+#     # 예시 분석: 유효기간이 지났거나 임박한 재고
+#     # (실제 날짜 비교 로직 필요, 여기서는 데이터 조회만 수행)
+#
+#     # 필요한 컬럼만 조인하여 보여줌
+#     # product 테이블의 'remaining_shelf_life' 등 정보와 결합 가능
+#
+#     days = prod.iloc[0]['long_term_stock_days']
+#     if days == 0 or pd.isna(days):
+#         return "Master Data에 기준일 없음. SOP 문서 탐색 필요."
+#     return f"기준일: {days}일"
 
 @tool
 def mock_function():
