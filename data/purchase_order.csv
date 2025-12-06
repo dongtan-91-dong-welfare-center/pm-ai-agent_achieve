@@ -1,5 +1,0 @@
-po_id,vendor_id,product_id,order_qty,order_date,expected_delivery,status
-PO-2024-001,V-001,가지조림,300,2024-11-10,2024-12-15,Ordered
-PO-2024-002,V-002,된장국,500,2024-11-12,2024-12-20,Planned
-PO-2024-003,V-001,공기밥,200,2024-11-15,2024-12-05,Delivered
-PO-2024-004,V-003,엔블로,1000,2024-11-18,2024-12-30,Ordered

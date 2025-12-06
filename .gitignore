@@ -28,3 +28,9 @@ __pycache__/
 # --- 운영체제(OS) 자동 생성 파일 ---
 # Windows
 Thumbs.db
+
+# --- 실제 현업 데이터 DATA ---
+/data/
+
+# --- 회의록 ---
+/meeting_notes/

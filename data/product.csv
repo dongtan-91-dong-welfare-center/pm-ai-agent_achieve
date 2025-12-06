@@ -1,6 +1,0 @@
-product_id,plant_code,product_type,description,base_unit,plant_status,prod_storage_loc,ep_storage_loc,remaining_shelf_life_days,total_shelf_life_days,stock_available,stock_available_value,stock_quality_inspection,stock_quality_inspection_value,stock_blocked,stock_blocked_value
-우루사,1220,FERT,Finished Drug X,PAC,Z1,3101,4101,180,365,50,50000,0,0,0,0
-가지조림,1220,ROH1,Chemical A,KG,Z1,1101,4101,300,365,500,250000,50,25000,0,0
-된장국,1220,ROH1,Chemical B,L,Z2,1101,4101,200,300,800,320000,20,8000,0,0
-엔블로,1220,ROH2,Packaging Box,EA,Z1,2101,4101,360,720,200,20000,0,0,0,0
-공기밥,1220,ROH1,Solvent Z,L,ZA,1101,4101,90,180,1000,400000,0,0,100,40000

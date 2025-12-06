@@ -1,6 +1,0 @@
-product_id,current_qty,storage_loc,update_date,stock_available,stock_quality_inspection,stock_blocked
-우루사,50,SL03,2024-11-20,50,0,0
-가지조림,550,SL01,2024-11-20,500,50,0
-된장국,820,SL01,2024-11-21,800,20,0
-엔블로,200,SL02,2024-11-19,200,0,0
-공기밥,1100,SL01,2024-11-20,1000,0,100
