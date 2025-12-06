@@ -4,12 +4,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from langgraph.graph import StateGraph
-from langgraph.prebuilt import ToolNode
+# from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
 
 # 분리한 모듈들 임포트
 from agent_state import AgentState
-from agent_config import base_tools
+# from agent_config import base_tools
 from agent_nodes import reasoner, code_generator, code_executor, finalize_order
 from agent_routers import route_reasoner, route_after_execution
 
@@ -21,7 +21,7 @@ builder = StateGraph(AgentState)
 
 # 노드 추가
 builder.add_node("reasoner", reasoner)
-builder.add_node("tools", ToolNode(base_tools)) # base_tools만 실제 실행 (Request 모델 제외)
+# builder.add_node("tools", ToolNode(base_tools)) # base_tools만 실제 실행 (Request 모델 제외)
 builder.add_node("code_generator", code_generator)
 builder.add_node("code_executor", code_executor)
 builder.add_node("finalize_order", finalize_order)
@@ -34,15 +34,19 @@ builder.add_conditional_edges(
     "reasoner",
     route_reasoner,
     {
-        "tools": "tools",
+        # "tools": "tools",
         "code_generator": "code_generator",
         "finalize_order": "finalize_order",
         "__end__": "__end__"
     }
 )
 
-builder.add_edge("tools", "reasoner")
+# tools -> reasoner 회귀 엣지
+# builder.add_edge("tools", "reasoner")
+
+# code 생성기는 실행기로 무조건 연결
 builder.add_edge("code_generator", "code_executor")
+
 
 builder.add_conditional_edges(
     "code_executor",
@@ -54,10 +58,11 @@ builder.add_conditional_edges(
     }
 )
 
+# finalize order 완료 후 reasoner로 복귀(종료 메시지 생성)
 builder.add_edge("finalize_order", "reasoner")
 
 # 최종 컴파일 (승인 절차 포함)
 graph = builder.compile(
     checkpointer=memory,
-    interrupt_before=["finalize_order"]
+    interrupt_before=["finalize_order"] # 승인 대기
 )

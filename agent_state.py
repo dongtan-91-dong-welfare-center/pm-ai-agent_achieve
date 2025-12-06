@@ -7,8 +7,13 @@ from pydantic import BaseModel, Field
 class AgentState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     current_plan_id: Optional[str]
+    # 분석 결과 데이터(그래프, 표 등)
     analysis_data: Dict[str, Any]
+    # 생성한 파이썬 코드
     generated_code: Optional[str]
+    # 실행 상태를 추적하기 위한 필드
+    execution_status: Optional[str]
+    # 에러 메시지 따로 저장
     code_execution_result: Optional[str]
     waiting_for_approval: bool
     retry_count: int
