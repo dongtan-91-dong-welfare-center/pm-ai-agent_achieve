@@ -9,7 +9,7 @@ FILE_PROCESSORS = {
     "자재 정보": ("product", processors.process_product_info, "UPSERT_ROWS", "product_id", ),
     "자재 외부 착인 여부": ("product", processors.process_attachment_info, "EXTEND_COLUMNS", "product_id", ),
     "자재 에디션": ("product", processors.process_edition_info, "EXTEND_COLUMNS", "product_id", ),
-    "공급업체 목록": ("vendor",processors.process_vendor_info,"UPSERT_ROWS", "vendor_id", ),
+    "공급업체 목록": ("vendor",processors.process_vendor_info,"REPLACE_ALL", "vendor_id", ),
     "BOM": ("bom", processors.process_bom_info, "REPLACE_ALL", None),
     "생산 계획": ("production_plan", processors.process_production_plan, "REPLACE_ALL", None),
     "자재수불부": ("material_ledger", processors.process_material_ledger_info, "REPLACE_ALL", None),
@@ -17,6 +17,7 @@ FILE_PROCESSORS = {
     "구매오더": ("purchase_order", processors.process_purchase_order_info, "REPLACE_ALL", None),
     "배치재고": ("batch_stock", processors.process_batch_stock_info, "REPLACE_ALL", None),
     "창고재고": ("warehouse_stock", processors.process_warehouse_stock_info, "REPLACE_ALL", None),
+    "오버리지": ("overage", processors.process_overage_info, "REPLACE_ALL", None, ),
 }
 
 

@@ -25,12 +25,23 @@ TABLE_SCHEMA = {
         "is_attachment",
     ],
 
-    # 공급업체
+    # 공급업체 (Vendor / Info Record)
     "vendor": [
         "vendor_id",
-        # "vendor_name",
-        "purchase_org",
-        "order_currency",
+        "vendor_name",
+        "product_id",
+        "valid_from",
+        "valid_to",
+        "manufacturer_id",
+        "manufacturer_name",
+        "manufacturer_group",
+        "material_group",
+        "purchasing_group",
+        "purchasing_group_name",
+        "order_unit",
+        "unit_price",
+        "currency",
+        "price_unit",
     ],
 
     # BOM
@@ -117,14 +128,16 @@ TABLE_SCHEMA = {
         "inspection_lot_no",
     ],
 
-    # 구매 오더
+    # 구매 오더 (Purchase Order)
     "purchase_order": [
         "po_id",
+        "item_no",
         "vendor_id",
         "product_id",
-        "posting_date",
-        "order_qty",
-        "order_price",
+        "po_date",
+        "schedule_qty",
+        "received_qty",
+        "delivery_date",
     ],
 
     # 유효 기한
@@ -158,4 +171,16 @@ TABLE_SCHEMA = {
         "stock_segment",
         "plant_transfer_in_progress",
     ],
+
+    # 오버리지 (Overage)
+    "overage": [
+        "product_id",
+        "packing_code",
+        "range_from",
+        "range_to",
+        "overage_abs_qty",
+        "overage_rate",
+        "rounding_decimal",
+    ],
+
 }

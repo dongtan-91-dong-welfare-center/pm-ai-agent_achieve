@@ -285,7 +285,6 @@ def generate_purchase_prediction(dummy_arg: str = "") -> str:
                 # 1) 품목명 조회
                 prod_desc = ""
                 prod_row = products[products['product_id'] == comp_id]
-                print(prod_row, "가 존재합니까?")
                 if not prod_row.empty:
                     prod_desc = prod_row.iloc[0]['description']
 
@@ -331,11 +330,12 @@ def generate_purchase_prediction(dummy_arg: str = "") -> str:
 
 
 # @tool
-# def analyze_long_term_stock() -> str:
-#     """
-#     장기 체류 재고(Batch Stock 기준)를 분석합니다.
-#     유효기간(expiration_date)이나 제조일(manufacture_date)을 기준으로 판단합니다.
-#     """
+def analyze_long_term_stock() -> str:
+    """
+    장기 체류 재고(Batch Stock 기준)를 분석합니다.
+    유효기간(expiration_date)이나 제조일(manufacture_date)을 기준으로 판단합니다.
+    """
+    pass
 #     batch_df = DB['batch_stock']
 #     product_df = DB['product']
 #

@@ -76,10 +76,24 @@ def process_edition_info(df):
 def process_vendor_info(df):
     """[Vendor] 공급업체 정보 추가"""
     mapping = {
+        "Fix": "fix",  # 요청하신 예시 포함
+        "플랜트": "plant_code",
         "공급업체": "vendor_id",
-        "공급업체 이름": "vendor_name",
-        "구매 조직": "purchase_org",
-        "오더 통화": "order_currency"
+        "업체명": "vendor_name",
+        "자재번호": "product_id",
+        "유효시작일": "valid_from",
+        "유효만료일": "valid_to",
+        "제조자": "manufacturer_id",
+        "제조자명": "manufacturer_name",
+        "자재그룹": "material_group",  # manufacturer_group?
+        "자재그룹명": "material_group_name",
+        "구매그룹": "purchasing_group",
+        "구매그룹명": "purchasing_group_name",
+        "발주단위": "order_unit",
+        "기본단위": "base_unit",
+        "단가": "unit_price",
+        "통화": "currency",
+        "가격단위": "price_unit"
     }
     df.rename(columns=mapping, inplace=True)
     return df[mapping.values()]  # 필요한 컬럼만 리턴
@@ -186,17 +200,40 @@ def process_purchase_order_info(df):
     """[Purchase_Order] 구매 오더 정보 추가"""
     mapping = {
         "구매 문서": "po_id",
+        "품목": "item_no",
         "공급업체": "vendor_id",
         "자재": "product_id",
-        "증빙일": "posting_date",
-        "오더 수량": "order_qty",
-        "오더 정가": "order_price",
+        "구매 오더일": "po_date",
+        "예정 수량": "schedule_qty",
+        "GR 수량": "received_qty",
+        "납품일": "delivery_date"
     }
+
     df.rename(columns=mapping, inplace=True)
+
     for col in ["product_id", "po_id", "vendor_id"]:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip()
     return df[mapping.values()]
+
+
+def process_overage_info(df):
+    """[Overage] 자재별 오버리지 기준 매핑"""
+    mapping = {
+        "자재": "product_id",
+        "포장재코드": "packing_code",
+        "투입량 범위(FROM)": "range_from",
+        "투입량 범위(TO)": "range_to",
+        "오버리지 수량(절대값)": "overage_abs_qty",
+        "오버리지 비율(%)": "overage_rate",
+        "올림 소수점 자릿수": "rounding_decimal"
+    }
+    df.rename(columns=mapping, inplace=True)
+
+    if "product_id" in df.columns:
+        df["product_id"] = df["product_id"].astype(str).str.strip()
+
+    return df[list(mapping.values())]
 
 
 def process_batch_stock_info(df):
