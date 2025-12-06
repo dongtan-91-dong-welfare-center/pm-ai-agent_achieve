@@ -88,27 +88,27 @@ def reasoner(state: AgentState) -> dict:
         return {"messages": [AIMessage(content=f"처리 중 오류 발생: {e}")]}
 
 
-# Code Generator (LLM -> schema만 활용)
+
+# Code Generator Node (with Self-Correction)
 def code_generator(state):
     """
     사용자 질문과 스키마 정보를 바탕으로 Python 코드를 생성합니다.
-    보안 원칙: 실제 데이터(Value)는 보지 않고, 스키마(Column)만 참조합니다.
+    에러 발생 시, 이전 에러 메시지를 포함하여 자동 수정(Self-Correction) 시도.
     """
     print("--- NODE: Code Generator ---")
     messages = state["messages"]
+    execution_status = state.get("execution_status")
+    error_message = state.get("code_execution_result")
+    retry_count = state.get("retry_count", 0)
 
-    # 리스트를 거꾸로 탐색하여 가장 최근의 HumanMessage를 찾습니다.
+    # 가장 최근의 사용자 질문 찾기
     user_message = next(
         (msg for msg in reversed(messages) if isinstance(msg, HumanMessage)),
         None
     )
+    user_question = user_message.content if user_message else "질문을 찾을 수 없습니다."
 
-    if user_message is None:
-        return {"messages": [AIMessage(content="사용자의 질문을 찾을 수 없습니다.")]}
-
-    user_question = user_message.content
-
-    # 스키마 정보를 프롬프트용 텍스트로 변환
+    # 스키마 정보 포맷팅
     schema_context = format_schema_for_prompt(TABLE_SCHEMA)
 
     # 시스템 프롬프트 구성
@@ -117,89 +117,102 @@ def code_generator(state):
         user_question=user_question
     )
 
-    # LLM 호출 Tools를 사용하지 않고, 순수 Code Generation
-    # binds_toos가 없는 순수 LLM 객체 사용
+    # [Self-Correction] 이전 에러가 있으면 수정 지시 추가
+    if execution_status == "error" and error_message:
+        print(f">>> Retry #{retry_count}: Generating corrected code...")
+        correction_instruction = (
+            f"\n\n[⚠️  이전 코드 실행 실패]\n"
+            f"이전 코드가 다음 오류로 인해 실행되지 않았습니다:\n{error_message}\n"
+            f"이 오류를 해결하도록 코드를 수정하여 다시 작성해주세요."
+        )
+        system_content += correction_instruction
+
     try:
-        # 메시지 구성: 시스템 프롬프트(지시) + 사용자 질문(컨텍스트)
+        # LLM 호출
         response = llm.invoke([
             SystemMessage(content=system_content),
             HumanMessage(content=user_question)
         ])
-        # Markdown 코드 블록 제거
-        generated_code = response.content.replace("```python", "").replace("```", "").strip()
 
-        print(f"Generated Code:\n{generated_code}")  # 디버깅용
+        # Markdown 포맷 제거
+        generated_code = response.content.replace("```python", "").replace("```", "").strip()
+        print(f"✓ Code Generated (retry_count={retry_count})")
 
         return {"generated_code": generated_code}
 
     except Exception as e:
+        # 코드 생성 자체 실패 → 재시도 로직으로 넘김
+        error_msg = f"코드 생성 중 오류: {str(e)}"
+        print(f"❌ {error_msg}")
+
         return {
-            "messages": [AIMessage(content=f"코드 생성 중 오류가 발생했습니다: {str(e)}")],
-            "generated_code": ""
-    }
+            "execution_status": "error",
+            "code_execution_result": error_msg,
+            "retry_count": retry_count + 1
+        }
 
 
-# Code Executor (Local Execution)
+# Code Executor (Local Execution with Error Handling)
 def code_executor(state):
     """
-    생성된 코드를 내부 안전 환경(exec)에서 실행합니다.
-    이때 실제 데이터를 메모리에 로드하여 변수로 주입합니다.
+    생성된 코드를 안전한 환경(exec)에서 실행합니다.
+    실패 시 execution_status='error'를 반환하여 재시도 로직 트리거.
     """
     print("--- NODE: Code Executor ---")
     generated_code = state.get("generated_code", "")
+    retry_count = state.get("retry_count", 0)
 
     if not generated_code:
-        return {"messages": [AIMessage(content="실행할 코드가 생성되지 않았습니다.")]}
+        return {
+            "execution_status": "error",
+            "code_execution_result": "생성된 코드가 비어 있습니다.",
+            "retry_count": retry_count
+        }
 
-    # 실행 환경(Context) 준비: 실제 데이터를 로드
-    # 보안상 이 데이터는 외부로 나가지 않고 이 함수 스코프 내에서만 존재합니다.
-    # raw_data_dict = load_master_data()  # {'Inventory': df, 'BOM': df ...}
-    raw_data_dict = load_mock_data_for_test()
+    # 실행 환경(Context) 준비
+    global_context = {
+        "pd": pd,
+        "np": np,
+        "tools": tools,
+        "DB": tools.DB,
+    }
 
-    local_env = {"pd": pd}
+    # 데이터프레임 단축 변수 추가 (예: df_product)
+    if tools.DB:
+        for table_name, df in tools.DB.items():
+            global_context[f"df_{table_name}"] = df
 
-    # 데이터프레임을 변수명(df_tablename)으로 매핑
-    # 예: Product -> df_product
-    for table, df in raw_data_dict.items():
-        local_env[f"df_{table}"] = df
-
-    # 하이브리드 로직: 비즈니스 함수 추가
-    # 이제 LLM이 작성한 코드에서 이 함수명들을 변수처럼 쓸 수 있습니다.
-    # local_env["calculate_safety_stock"] = 추가한 함수명
-    # local_env["get_exchange_rate"] = 추가한 함수명
-    
-    # 코드 실행
     try:
-        # exec()는 위험할 수 있으므로, 상용에서는 Sandbox(Docker/E2B) 사용 권장
-        # MVP 단계에서는 로컬 exec 사용하되, 생성된 코드 검증 필요
-        exec(generated_code, {}, local_env)
-
-        # 결과 추출 ('result' 변수에 담긴 값)
-        execution_result = local_env.get("result", None)
+        local_context = {}
+        exec(generated_code, global_context, local_context)
+        
+        execution_result = local_context.get("result", None)
 
         if execution_result is None:
             return {
-                "messages": [AIMessage(content="코드는 실행되었으나 결과(result) 변수가 없습니다.")],
-                "execution_status": "failed"
+                "execution_status": "error",
+                "code_execution_result": "'result' 변수에 값이 할당되지 않았습니다. 코드에서 반드시 result = ... 형태로 결과를 할당하세요.",
+                "retry_count": retry_count + 1
             }
 
+        # ✅ 성공
         return {
-            # UI가 렌더링할 데이터
-            # UI(Streamlit)로 보내기 위해 직렬화
-            "analysis_data": {"last_run_result": serialize_result(execution_result)}, # # 결과 직렬화 (DataFrame -> Dict)
-            # 실행 상태
+            "analysis_data": {"last_run_result": serialize_result(execution_result)},
             "execution_status": "success",
-            # LLM에게 결과를 텍스트로도 알려주고 싶다면 messages에 추가
-            "messages": [AIMessage(content=f"계산 결과는 다음과 같습니다: {str(execution_result)}")]
+            "code_execution_result": "성공",
+            "retry_count": 0
         }
 
     except Exception as e:
-        print(f"Execution Error: {e}")
-    return {
-        "messages": [AIMessage(content=f"코드 실행 중 오류가 발생했습니다.\nError: {str(e)}")],
-        "execution_status": "failed",
-        "error_message": str(e)
-    }
+        # ❌ 실패 (에러 메시지와 함께 재시도 횟수 증가)
+        error_msg = str(e)
+        print(f"!!! Execution Error: {error_msg}")
+
+        return {
+            "execution_status": "error",
+            "code_execution_result": error_msg,
+            "retry_count": retry_count + 1
+        }
 
 # ============================================================================
 # ROUTER FUNCTIONS (병합됨: agent_routers.py 로직)
