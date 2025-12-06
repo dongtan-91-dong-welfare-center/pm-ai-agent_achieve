@@ -201,7 +201,84 @@ def code_executor(state):
         "error_message": str(e)
     }
 
-# finalize order(Action)
+# ============================================================================
+# ROUTER FUNCTIONS (병합됨: agent_routers.py 로직)
+# ============================================================================
+
+from typing import Literal
+
+
+def route_reasoner(state: AgentState) -> str:
+    """
+    LLM의 판단(Tool Call)을 보고 다음 노드를 결정합니다.
+    
+    Returns:
+        "code_generator" - PythonAnalysisRequest 트리거
+        "finalize_order" - FinalizeOrderRequest 트리거
+        "tools" - 일반 도구 호출
+        "__end__" - 종료
+    """
+    messages = state.get("messages", [])
+    if not messages:
+        return "__end__"
+    
+    last_message = messages[-1]
+
+    # Tool Calls 확인
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        first_tool = last_message.tool_calls[0]
+        tool_name = first_tool["name"]
+
+        print(f">>> [Reasoner Router] Tool Call: {tool_name}")
+
+        # PythonAnalysisRequest → Code Generator (복잡한 분석)
+        if tool_name == "PythonAnalysisRequest":
+            return "code_generator"
+
+        # FinalizeOrderRequest → Finalize Order (발주 최종 확정)
+        if tool_name == "FinalizeOrderRequest":
+            return "finalize_order"
+
+        # 일반 도구 → Tools Node (재고 조회 등)
+        return "tools"
+
+    # 도구 호출 없음 → 종료
+    return "__end__"
+
+
+def route_after_execution(state: AgentState) -> Literal["success", "retry", "max_retries"]:
+    """
+    Code Executor의 실행 결과를 보고 재시도 여부를 결정합니다.
+    
+    **Self-Correction Loop:**
+    - success: 정상 완료 → reasoner 진행
+    - retry: 에러 발생, 재시도 가능 → code_generator 재실행
+    - max_retries: 최대 재시도 횟수 초과 → reasoner에 실패 보고
+    """
+    status = state.get("execution_status")
+    retry_count = state.get("retry_count", 0)
+    MAX_RETRIES = 3
+
+    print(f"--- [Execution Router] Status: {status}, Retries: {retry_count}/{MAX_RETRIES} ---")
+
+    # ✅ 성공
+    if status == "success":
+        return "success"
+
+    # ❌ 실패 → 재시도 가능?
+    if status == "error":
+        if retry_count < MAX_RETRIES:
+            print(f">>> RETRY (Attempt {retry_count + 1}/{MAX_RETRIES})")
+            return "retry"
+        else:
+            print(f">>> MAX RETRIES REACHED - GIVING UP")
+            return "max_retries"
+
+    # 예기치 않은 상태 → 성공으로 간주
+    return "success"
+
+
+# Finalize Order Node
 def finalize_order(state: AgentState) -> dict:
     """
     발주 결과를 반영하여 실제 DB 저장을 수행하는 노드
