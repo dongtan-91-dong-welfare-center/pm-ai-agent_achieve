@@ -50,7 +50,7 @@ def save_uploaded_file_by_type(uploaded_file, source_type):
             return False, "설정 오류: 해당 전략은 식별자(PK)가 필요합니다."
 
         # 새로운 데이터에 대해 숫자로 들어오든 문자로 들어오든 무조건 str로 맞추고 공백을 날립니다.
-        new_df[pk_col] = new_df[pk_col].astype(str).str.strip()
+        new_df.loc[:, pk_col] = new_df[pk_col].astype(str).str.strip()
 
         # 기존 데이터가 존재하면, pk_col을 전처리
         if os.path.exists(file_path):
