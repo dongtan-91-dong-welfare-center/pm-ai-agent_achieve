@@ -348,7 +348,15 @@ def analyze_long_term_stock() -> str:
     # 필요한 컬럼만 조인하여 보여줌
     # product 테이블의 'remaining_shelf_life' 등 정보와 결합 가능
 
-    merged = pd.merge(batch_df, product_df[['product_id', 'description', 'remaining_shelf_life']], on='product_id',
-                      how='left')
+    days = prod.iloc[0]['long_term_stock_days']
+    if days == 0 or pd.isna(days):
+        return "Master Data에 기준일 없음. SOP 문서 탐색 필요."
+    return f"기준일: {days}일"
 
-    return merged.head(10).to_markdown(index=False)
+@tool
+def mock_function():
+    """
+    새로 생성하겠습니다.
+    :return:
+    """
+    pass
