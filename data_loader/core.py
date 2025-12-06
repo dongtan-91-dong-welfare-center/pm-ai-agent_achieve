@@ -120,14 +120,64 @@ def load_master_data():
         return {}
 
 
-def get_database_schema_string():
-    """보안을 위해 실제 데이터가 아닌 '테이블명'과 '컬럼명', '데이터 타입'만 추출하여 문자열로 반환"""
-    schema_str = "Available Tables and Columns:\n"
+def get_database_schema_string(meta_file_path="data/Datas.csv"):
+    """
+    실제 데이터(Row)는 절대 조회하지 않음.
+    대신 'Datas.csv' (메타 데이터)를 읽어 테이블/컬럼의 의미와 타입을 상세히 기술한 문자열을 생성함.
+    """
 
-    # TABLE_SCHEMA는 이미 정의되어 있으므로 이를 활용
-    for table, columns in TABLE_SCHEMA.items():
-        schema_str += f"- Table '{table}': {columns}\n"
-        # 필요하다면 컬럼의 의미(주석)만 추가
-        # 샘플 데이터 절대 넣지 않기
+    # 1. 메타 데이터 파일 로드 (없으면 기본 스키마 반환)
+    if not os.path.exists(meta_file_path):
+        return "Schema metadata file not found. Please verify 'Datas.csv' path."
+
+    try:
+        # CSV 로드 (인코딩 주의: 한글이 포함되어 있으므로 euc-kr 또는 utf-8 확인 필요)
+        # 업로드된 파일 내용을 보니 헤더가 '개체(영문)', '속성(영문)', '데이터 타입', '속성 설명' 등으로 되어 있음
+        df_meta = pd.read_csv(meta_file_path)
+
+        # 컬럼명 정규화 (공백 제거 등)
+        df_meta.columns = [c.strip() for c in df_meta.columns]
+
+    except Exception as e:
+        return f"Error loading schema metadata: {str(e)}"
+
+    schema_str = "### Database Schema Information (Security Level: Schema-Only)\n"
+    schema_str += "NOTE: Use these exact variable names and understand column meanings.\n\n"
+
+    # 2. 테이블 별로 그룹화하여 정보 추출
+    # Datas.csv의 컬럼명: '개체(영문)', '속성(영문)', '데이터 타입', '속성 설명' 기준
+    # 실제 파일 헤더에 맞춰 조정이 필요할 수 있음
+
+    # 데이터프레임이 비어있지 않은지 확인
+    if df_meta.empty:
+        return "Schema metadata is empty."
+
+    # 테이블 단위로 반복
+    # '개체(영문)' 컬럼을 기준으로 그룹핑
+    tables = df_meta['개체(영문)'].dropna().unique()
+
+    for table_name in tables:
+        # 해당 테이블의 데이터만 필터링
+        table_info = df_meta[df_meta['개체(영문)'] == table_name]
+
+        # 변수명 제안 (예: Product -> df_product)
+        var_name = f"df_{table_name.lower()}"
+
+        schema_str += f"#### Table: {table_name} (Variable: `{var_name}`)\n"
+
+        # 컬럼 정보 반복
+        for _, row in table_info.iterrows():
+            col_name = row.get('속성(영문)', 'N/A')
+            col_type = row.get('데이터 타입', 'Unknown')
+            col_desc = row.get('속성 설명', '')
+
+            # 설명에 줄바꿈이 있으면 제거
+            if isinstance(col_desc, str):
+                col_desc = col_desc.replace('\n', ' ').strip()
+
+            # 포맷팅: - column_name (TYPE): Description
+            schema_str += f"  - `{col_name}` ({col_type}): {col_desc}\n"
+
+        schema_str += "\n"
 
     return schema_str
