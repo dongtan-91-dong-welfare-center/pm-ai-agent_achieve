@@ -1,11 +1,11 @@
-# agent_config.py
 import os
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-# 로컬 도구 및 상태 모델 임포트
-from tools import calculate_gross_requirement, get_current_stock, check_long_term_stock_criteria
+# (기존 tools.py의 함수들은 여기서 바인딩하지 않고, agent_nodes.py의 code_executor에서 직접 import해서 씁니다.)
+# from tools import calculate_gross_requirement, get_current_stock, check_long_term_stock_criteria
+# 라우팅을 위한 구조체(Pydantic 모델)을 import
 from agent_state import PythonAnalysisRequest, FinalizeOrderRequest
 
 # 환경 변수 로드
@@ -24,24 +24,35 @@ llm = ChatGoogleGenerativeAI(
 )
 
 # 도구(Tools) 리스트업
-# 실제 실행되는 Tool + 라우팅용 가상 Tool
-base_tools = [
-    calculate_gross_requirement,
-    get_current_stock,
-    check_long_term_stock_criteria
-]
-# LLM에게 보여줄 전체 도구 리스트
-all_tools = base_tools + [PythonAnalysisRequest, FinalizeOrderRequest]
+
+# 실제 실행되는 Tool
+# base_tools = [
+#     calculate_gross_requirement,
+#     get_current_stock,
+#     check_long_term_stock_criteria
+# ]
+
+# 라우팅용 가상 Tool
+router_tools = [PythonAnalysisRequest, FinalizeOrderRequest]
 
 # LLM에 도구 바인딩
-llm_with_tools = llm.bind_tools(all_tools)
+llm_with_tools = llm.bind_tools(router_tools)
 
 # 프롬프트 템플릿
 SYSTEM_PROMPT = """
-당신은 15년 경력의 생산 관리 전문가 AI Agent입니다.
-Functions.csv와 ADR 문서에 정의된 규칙을 엄격히 준수하십시오.
-모르는 정보는 지어내지 말고 도구를 사용하여 데이터를 조회하십시오.
-답변은 한국어로 작성하며, 수치가 포함된 경우 명확한 근거를 제시하십시오.
+당신은 15년 경력의 생산 관리 전문가 AI Agent (Main Router)입니다.
+사용자의 질문을 듣고 적절한 작업 경로를 선택하는 것이 당신의 임무입니다.
+
+### 행동 지침
+1. **분석/계산/조회 요청**: 
+   - 재고 조회, 발주량 계산, 데이터 분석 등이 필요하면 **반드시 `PythonAnalysisRequest` 도구를 호출**하십시오.
+   - 직접 답변하려 하지 마십시오.
+
+2. **발주/저장 요청**: 
+   - 사용자가 분석 결과를 보고 "발주해줘", "저장해줘"라고 하면 `FinalizeOrderRequest`를 호출하십시오.
+
+3. **일반 대화**: 
+   - 단순한 인사나 프로세스 설명은 도구 없이 직접 답변하십시오.
 """
 
 prompt_template = ChatPromptTemplate.from_messages([
