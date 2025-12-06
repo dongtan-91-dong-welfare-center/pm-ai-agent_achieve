@@ -1,16 +1,12 @@
 import pandas as pd
 import numpy as np
 from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
-from langchain_core.runnables import chain
 
-# 설정 및 데이터 로더 관련 임포트
 from agent_state import AgentState
-from agent_config import llm, chain_prompt_llm # llm: 순수 모델, chain_prompt_llm: 대화형 모델
-from data_loader import TABLE_SCHEMA, load_master_data, load_mock_data_for_test
-from prompt import CODE_GEN_SYSTEM_PROMPT, format_schema_for_prompt
-
-# Python 실행 환경 준비 - 내부 LLM을 사용하는 경우 모두 사용해도 됨
-# RUN_CONTEXT = {"DB": data_loader.load_master_data(), "pd": pd}
+from agent_config import llm, chain_prompt_llm
+from data_loader import TABLE_SCHEMA
+from prompt import format_schema_for_prompt, CODE_GEN_SYSTEM_PROMPT
+import tools
 
 # 데이터 직렬화 헬퍼 함수
 def serialize_result(data):
@@ -24,13 +20,9 @@ def serialize_result(data):
             "data": data.to_dict(orient='split'),
             "columns": data.columns.tolist()
         }
-    # if isinstance(data, pd.DataFrame):
-    #     return data.to_dict(orient='split')  # DataFrame -> Dict 변환
-
     # Pandas Series -> List or Dict
     elif isinstance(data, pd.Series):
         return data.to_dict()
-
     # NumPy Scalar Types -> Python Native Types
     elif isinstance(data, (np.integer, np.int64)):
         return int(data)
@@ -40,13 +32,11 @@ def serialize_result(data):
         return bool(data)
     elif isinstance(data, np.ndarray):
         return data.tolist()
-
     # Recursive Handling (Dict / List)
     elif isinstance(data, dict):
         return {k: serialize_result(v) for k, v in data.items()} # 딕셔너리 내부 재귀 탐색
     elif isinstance(data, list):
         return [serialize_result(v) for v in data] # 리스트 내부 재귀 탐색
-
     # 이외 -> 그냥 반환
     return data
 
@@ -58,35 +48,64 @@ def reasoner(state: AgentState) -> dict:
     """
     print("--- NODE: Reasoner ---")
     messages = state.get("messages", [])
-
-    # 첫 메시지 처리
-    if len(messages) == 0:
+    # 1. 초기 진입 처리
+    if not messages:
         return {"messages": [AIMessage(content="안녕하세요! 생산 관리 AI Agent입니다. 무엇을 도와드릴까요?")]}
 
     last_message = messages[-1]
 
-    # 사용자의 새로운 질문이 들어왔다면?
-    # 기존에 analysis_data가 남아있더라도 무시하고 새로운 라우팅(LLM 호출)을 시작해야 함.
+    # [핵심 로직 1] 새로운 사용자 질문(Turn)이 시작된 경우
+    # -> 이전 분석 결과(analysis_data, execution_status)를 모두 클리어해야 함
     if isinstance(last_message, HumanMessage):
-        # 새로운 질문이 시작되었으므로 과거 분석 데이터는 클리어하는 것이 안전할 수 있으나,
-        # LangGraph 구조상 여기서 state를 지우기보다 로직으로 무시하는 것이 깔끔합니다.
-        print('사용자의 요청')
-        pass
+        print(">>> New Interaction Detected: Resetting State...")
 
-    # 사용자가 아니라 시스템이 루프를 돌고 돌아온 경우
-    if state.get("analysis_data"):
-        # Code Executor가 막 일을 마치고 돌아온 상태라면 종료 메시지 반환
-        # 이때는 마지막 메시지가 HumanMessage가 아님 (보통 ToolMessage거나 직전 단계의 산출물)
-        # LLM에게 결과를 텍스트로 요약해달라고 요청하는 로직 추가 가능
-        return {"message": [AIMessage(content="분석을 완료하였습니다. 결과를 확인해 주시기 바랍니다.")]}
+        # 라우팅을 위한 LLM 호출
+        # (이전 대화 맥락은 messages 리스트에 남아있으므로 LLM이 기억함)
+        response = chain_prompt_llm.invoke({"messages": messages})
 
-    # 일반적인 대화 처리(router가 code gen으로 보낼지 결정을 함)
-    try:
+        return {
+            "messages": [response],
+            # --- 상태 초기화 (Reset) ---
+            "execution_status": None,  # 실행 상태 리셋
+            "analysis_data": {},  # 이전 데이터 제거
+            "generated_code": None,  # 이전 코드 제거
+            "code_execution_result": None,  # 이전 로그 제거
+            "retry_count": 0  # 재시도 횟수 초기화
+        }
+
+    # [핵심 로직 2] 코드 실행(Executor)이 '성공'하고 돌아온 경우
+    if state.get("execution_status") == "success" and state.get("analysis_data"):
+        # 결과 데이터 가져오기
+        result_data = state["analysis_data"].get("last_run_result", "결과 없음")
+
+        # LLM에게 결과를 자연어로 요약 요청 (옵션)
+        # 여기서는 MVP용으로 간단히 결과 안내 메시지를 반환
+        # (필요하다면 여기서 LLM을 한 번 더 호출해서 `result_data`를 문장으로 만들 수 있음)
+
+        return {
+            "messages": [AIMessage(content=f"분석이 완료되었습니다. 결과: {result_data}")],
+            # 상태는 유지 (사용자가 "그걸 엑셀로 저장해줘"라고 할 수 있으므로 데이터는 남겨둠)
+            # 단, 무한 루프 방지를 위해 status를 'done' 등으로 바꾸거나,
+            # 다음 턴에서 HumanMessage가 오면 알아서 초기화되므로 놔둬도 됨.
+            "execution_status": "done"  # success 상태를 done으로 변경하여 루프 끊기
+        }
+
+    # [핵심 로직 3] 에러가 발생하여 실패로 끝난 경우
+    if state.get("execution_status") == "error":
+        error_msg = state.get("code_execution_result", "알 수 없는 오류")
+        return {
+            "messages": [AIMessage(content=f"작업을 수행하는 도중 오류가 발생했습니다.\n(내용: {error_msg})")],
+            "execution_status": "done"
+        }
+
+    # 그 외의 경우 (예: Router가 Tool을 호출하고 ToolMessage가 들어온 직후 등)
+    # ToolMessage가 마지막이라면 -> 다시 LLM을 호출해서 결과를 해석해야 함
+    if hasattr(last_message, "tool_call_id") or last_message.type == "tool":
         response = chain_prompt_llm.invoke({"messages": messages})
         return {"messages": [response]}
-    except Exception as e:
-        return {"messages": [AIMessage(content=f"처리 중 오류 발생: {e}")]}
 
+    # 기본 안전 장치
+    return {"messages": [AIMessage(content="다음 작업을 진행할 수 없습니다.")]}
 
 
 # Code Generator Node (with Self-Correction)
@@ -111,7 +130,7 @@ def code_generator(state):
     # 스키마 정보 포맷팅
     schema_context = format_schema_for_prompt(TABLE_SCHEMA)
 
-    # 시스템 프롬프트 구성
+    # 기본 시스템 프롬프트 + 재시도 시 에러 정보 추가
     system_content = CODE_GEN_SYSTEM_PROMPT.format(
         schema_context=schema_context,
         user_question=user_question
@@ -294,10 +313,10 @@ def route_after_execution(state: AgentState) -> Literal["success", "retry", "max
 # Finalize Order Node
 def finalize_order(state: AgentState) -> dict:
     """
-    발주 결과를 반영하여 실제 DB 저장을 수행하는 노드
+    발주 최종 확정 처리 (DB 저장 등)
     """
     print("--- NODE: Finalize Order ---")
-    # data = state.get("analysis_data", {}
     
-    # 실제 DB 저장 로직 (Mock)
-    return {"messages": [AIMessage(content="발주 정보를 데이터베이스에 저장하였습니다.")], "waiting_for_approval": False}
+    return {
+        "messages": [AIMessage(content="발주가 최종 승인되어 시스템에 반영되었습니다.")]
+    }
