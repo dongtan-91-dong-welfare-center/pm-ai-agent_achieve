@@ -48,7 +48,7 @@ TABLE_SCHEMA = {
         "serial_no",
         "material_type",
         "country",
-        "quantity",
+        "packing_unit",
         "remark",
         "start_date",
         "end_date",
