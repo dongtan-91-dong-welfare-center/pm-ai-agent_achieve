@@ -79,48 +79,41 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# heavy resource 로딩( 캐시 적용 지연 로딩)
+# 리소스 로딩 (캐싱 적용)
 @st.cache_resource(show_spinner="AI Agent를 초기화 중입니다...")
 def get_agent_graph():
-    """
-    무거운 라이브러리(LangGraph, LangChain 등)와 그래프 빌드 로직을
-    이 함수 안에서 수행하여, 앱 초기 로딩 속도를 확보합니다.
-    """
-    # 여기서 import를 수행하여 Top-level import 지연 효과
+    """Agent Graph를 한 번만 로드하여 캐싱합니다."""
     from agent_graph import graph
     return graph
 
+
 @st.cache_resource
 def get_data_loader_modules():
-    """
-    데이터 로더 모듈도 필요할 때 로드합니다.
-    """
+    """데이터 로더 모듈을 지연 로딩합니다."""
     from data_loader import TABLE_SCHEMA, save_uploaded_file_by_type, load_master_data, FILE_PROCESSORS
     return TABLE_SCHEMA, save_uploaded_file_by_type, load_master_data, FILE_PROCESSORS
 
-# 데이터 로더 모듈 가져오기
+# 모듈 로드
 _, save_uploaded_file_by_type, load_master_data, FILE_PROCESSORS = get_data_loader_modules()
 
 
-# 공통 함수 - 시각화 렌더러
+# 유틸리티 함수: 분석 결과 시각화
 def render_analysis_result(result_data):
     """
-    [유틸리티 함수]
-    Backend에서 전달받은 데이터(Dict/DataFrame)를 시각화합니다.
-    채팅 히스토리 출력 시와 실시간 스트리밍 시 공통으로 사용됩니다.
+    Backend에서 전달받은 데이터(Dict/DataFrame/Scalar)를 시각화합니다.
+    숫자, 텍스트, 데이터프레임 등 다양한 타입을 지원합니다.
     """
     chart_type = "table"
     df_viz = None
-    raw_data = result_data
+    scalar_value = None
+    raw_data_content = result_data
 
-    # 데이터 구조 파악 (Dict vs DataFrame)
-    if isinstance(raw_data, dict) and "type" in raw_data and "data" in raw_data:
-        chart_type = raw_data["type"]
-        raw_data_content = raw_data["data"]
-    else:
-        raw_data_content = raw_data
+    # 딕셔너리 구조인 경우 ({type: ..., data: ...})
+    if isinstance(result_data, dict) and "type" in result_data and "data" in result_data:
+        chart_type = result_data["type"]
+        raw_data_content = result_data["data"]
 
-    # DataFrame 복원 (msgpack 직렬화 해제)
+    # DataFrame 복원 (msgpack 직렬화 해제된 Dict 구조)
     if isinstance(raw_data_content, dict) and "columns" in raw_data_content and "data" in raw_data_content:
         try:
             df_viz = pd.DataFrame(
@@ -128,15 +121,26 @@ def render_analysis_result(result_data):
                 columns=raw_data_content["columns"],
                 index=raw_data_content.get("index")
             )
-        # 추후 예외 절 구체화 필요
         except Exception:
-            df_viz = None  # 복원 실패
+            df_viz = None
+    # 이미 DataFrame인 경우
     elif isinstance(raw_data_content, pd.DataFrame):
         df_viz = raw_data_content
+    # 단순 숫자나 문자열인 경우 (Scalar)
+    elif isinstance(raw_data_content, (int, float, str)):
+        scalar_value = raw_data_content
 
     # 실제 렌더링
-    if df_viz is not None and not df_viz.empty:
-        with st.expander(f"분석 결과 ({chart_type})", expanded=True):
+    # 단순 숫자/텍스트 (KPI 지표 등)
+    if scalar_value is not None:
+        if isinstance(scalar_value, (int, float)):
+            st.metric(label="분석 결과", value=f"{scalar_value:,.0f}")
+        else:
+            st.info(f"분석 결과: {scalar_value}")
+
+    # DataFrame 시각화
+    elif df_viz is not None and not df_viz.empty:
+        with st.expander(f"분석 결과 데이터 ({chart_type})", expanded=True):
             if chart_type == "line":
                 st.line_chart(df_viz)
             elif chart_type == "bar":
@@ -144,59 +148,54 @@ def render_analysis_result(result_data):
             elif chart_type == "area":
                 st.area_chart(df_viz)
             else:
-                st.dataframe(df_viz, use_container_width=True)
-    else:
-        st.caption("※ 시각화할 데이터가 없습니다.")
+                st.dataframe(df_viz, width="stretch")
 
-# [사이드바] 데이터 베이스 관리
+    # 리스트 데이터
+    elif isinstance(raw_data_content, list):
+        st.write("목록 결과:")
+        st.json(raw_data_content)
+
+
+# 사이드바 UI
 with st.sidebar:
     st.header("Data Management")
 
-    # 엑셀 파일 업로드 섹션
+    # 파일 업로드
     with st.expander("마스터 파일 업로드", expanded=True):
-
-        source_type = st.selectbox(
-            "업로드할 파일을 선택하세요.",
-            options=list(FILE_PROCESSORS.keys())
-        )
+        source_type = st.selectbox("업로드할 파일 유형", options=list(FILE_PROCESSORS.keys()))
         uploaded_file = st.file_uploader("엑셀 파일 선택", type=["xlsx"])
-
         if uploaded_file and st.button("데이터 추가"):
-            with st.spinner("데이터 파싱 및 저장 중..."):
+            with st.spinner("처리 중..."):
                 success, msg = save_uploaded_file_by_type(uploaded_file, source_type)
                 if success:
                     st.success(msg)
-                    # Streamlit 앱을 다시 실행하여 변경된 세션 상태를 화면에 반영합니다.
-                    # st.rerun()
                 else:
                     st.error(msg)
 
     st.divider()
 
-    # DB 조회 섹션
+    # 데이터 탐색기
     st.subheader("데이터 탐색기")
+    try:
+        # Mock Data 로드 (테스트용) 혹은 load_master_data() 사용
+        # from agent_nodes import load_mock_data_for_test
+        # current_db = load_mock_data_for_test()
+        current_db = load_master_data()  # 실제 환경용
 
-    # 현재 로드된 데이터 가져오기
-    current_db = load_master_data()
+        if current_db:
+            selected_table = st.selectbox("조회할 테이블", list(current_db.keys()))
+            if selected_table:
+                st.dataframe(current_db[selected_table], height=200)
+    except Exception:
+        st.warning("데이터를 로드할 수 없습니다.")
 
-    if current_db:
-        selected_table = st.selectbox("조회할 테이블", list(current_db.keys()))
-
-        if selected_table:
-            df = current_db[selected_table]
-            st.caption(f"행의 개수: {len(df)}")
-            st.dataframe(df, width="stretch", height=300)
-    else:
-        st.warning("데이터가 없습니다.")
-
-# [메인] 채팅 인터페이스
+# 메인 채팅 인터페이스
 st.title("생산 관리 AI Agent")
 
-# 세션 상태 초기화
 if "messages" not in st.session_state:
     st.session_state["messages"] = []
 
-# 기존 채팅 히스토리 렌더링
+# 히스토리 렌더링
 for msg in st.session_state.messages:
     if isinstance(msg, HumanMessage):
         with st.chat_message("user"):
@@ -204,91 +203,81 @@ for msg in st.session_state.messages:
     elif isinstance(msg, AIMessage):
         with st.chat_message("assistant"):
             st.write(msg.content)
-            # 저장된 시각화 데이터가 있는지 확인
+            # Artifact(시각화 데이터)가 있으면 출력
             if "artifact" in msg.additional_kwargs:
                 render_analysis_result(msg.additional_kwargs["artifact"])
 
-
-# 이 시점에 graph를 로드합니다. 처음 실행 시에만 로딩 시간이 소요됩니다.
+# Agent 로드
 try:
     graph = get_agent_graph()
 except Exception as e:
-    st.error(f"AI Agent 초기화 실패: {str(e)}")
+    st.error(f"Agent 초기화 실패: {e}")
     st.stop()
 
-# Langgraph 실행 및 응답 처리
-user_input = st.chat_input("생산 계획 ID(PL-2024-001)에 대한 소요량을 분석해줘.")
+# 사용자 입력 처리
+user_input = st.chat_input("질문을 입력하세요. (예: M-1001의 재고 가치는?)")
 
 if user_input:
-    # 사용자 메시지 UI 표시
+    # 사용자 메시지 표시 & 저장
     with st.chat_message("user"):
         st.write(user_input)
     st.session_state["messages"].append(HumanMessage(content=user_input))
 
-    # LangGraph 실행 설정
+    # Agent 실행 (스트리밍)
     config = {"configurable": {"thread_id": "1"}}
 
-    # AI 응답 처리(스트리밍)
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         full_response = ""
+        analysis_artifact = None  # 실행 결과 데이터 저장용
 
-        # LangGraph 스트림 실행
-        events = graph.stream({"messages": st.session_state["messages"]}, config)
+        try:
+            # LangGraph 실행
+            events = graph.stream({"messages": st.session_state["messages"]}, config)
 
-        for event in events:
-            # [디버깅용] 어떤 이벤트가 들어오는지 화면에 잠시 출력합니다. (테스트 후 주석 처리)
-            # with st.expander("🔍 Debug: Event Stream", expanded=False):
-            #     st.write(event)
+            for event in events:
+                # Reasoner 이벤트 처리
+                if "reasoner" in event:
+                    payload = event["reasoner"]
+                    # 메시지가 있는지 확인
+                    if isinstance(payload, dict) and "messages" in payload:
+                        last_msg = payload["messages"][-1]
 
-            # Reasoner (LLM 답변) 처리
-            if "reasoner" in event:
-                msg = event["reasoner"]["messages"][-1]
-                if msg.content:
-                    if isinstance(msg.content, str):
-                        full_response += msg.content
-                    elif isinstance(msg.content, list):
-                        for part in msg.content:
-                            if isinstance(part, dict) and "text" in part:
-                                full_response += part["text"]
-                    message_placeholder.markdown(full_response + " ▌")
+                        # content가 존재할 때만 업데이트
+                        if hasattr(last_msg, 'content') and last_msg.content:
+                            full_response = last_msg.content  # 덮어쓰기 (완성된 문장)
+                            message_placeholder.markdown(full_response + " ▌")
 
-            # Finalize Order
-            if "finalize_order" in event:
-                msg = event["finalize_order"]["messages"][-1]
-                full_response += f"\n\n {msg.content}"
-                message_placeholder.markdown(full_response)
+                # Code Generator 이벤트 처리
+                if "code_generator" in event:
+                    payload = event["code_generator"]
+                    # 생성된 코드가 있다면 UI에 표시
+                    if "generated_code" in payload:
+                        gen_code = payload["generated_code"]
+                        with st.expander("AI가 생성한 분석 코드 확인", expanded=False):
+                            st.code(gen_code, language="python")
 
-            # Code Executor (실시간 시각화 및 데이터 캡처)
-            if "code_executor" in event:
-                node_output = event["code_executor"]
+                # Code Executor 이벤트 처리 (시각화 데이터)
+                if "code_executor" in event:
+                    payload = event["code_executor"]
+                    # 분석 결과 데이터 추출
+                    if "analysis_data" in payload:
+                        result = payload["analysis_data"].get("last_run_result")
+                        if result is not None:
+                            # 화면에 즉시 렌더링
+                            render_analysis_result(result)
+                            # 히스토리 저장을 위해 보관
+                            analysis_artifact = result
 
-                # 데이터 추출
-                analysis_data = node_output.get("analysis_data", {})
-                last_result = analysis_data.get("last_run_result")
+            # 스트리밍 완료 후 커서 제거
+            message_placeholder.markdown(full_response)
 
-                if last_result is not None:
-                    # 화면 렌더링 (함수 호출)
-                    render_analysis_result(last_result)
+            # AI 응답 저장
+            ai_msg = AIMessage(content=full_response)
+            if analysis_artifact is not None:
+                ai_msg.additional_kwargs["artifact"] = analysis_artifact
 
-                    # 데이터 캡처 (저장용)
-                    analysis_artifact = last_result
+            st.session_state["messages"].append(ai_msg)
 
-                # 만약 last_result가 없으면 에러 메시지를 표시
-                else:
-                    st.warning("Code Executor가 실행되었으나 결과 데이터(last_run_result)가 비어있습니다.")
-                    with st.expander("Node Output 확인"):
-                        st.write(node_output)
-
-        message_placeholder.markdown(full_response)
-
-        # AI 응답 저장 (artifact 포함)
-        ai_msg = AIMessage(content=full_response)
-        # 마지막 실행 결과가 있다면 artifact로 저장
-        if 'analysis_artifact' in locals():
-            ai_msg.additional_kwargs["artifact"] = analysis_artifact
-
-        st.session_state["messages"].append(ai_msg)
-
-    # # AI 응답 저장
-    # st.session_state["messages"].append(AIMessage(content=full_response))
+        except Exception as e:
+            st.error(f"실행 중 오류가 발생했습니다: {e}")
