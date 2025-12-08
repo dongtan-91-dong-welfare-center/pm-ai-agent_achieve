@@ -125,6 +125,7 @@ TABLE_SCHEMA = {
         "posting_date",
         "order_qty",
         "order_price",
+        "good_reciept_qty"
     ],
 
     # 유효 기한

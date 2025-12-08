@@ -215,64 +215,81 @@ except Exception as e:
     st.stop()
 
 # 사용자 입력 처리
-user_input = st.chat_input("질문을 입력하세요. (예: M-1001의 재고 가치는?)")
+# ... (이전 코드: Agent 초기화 부분 등)
+
+# =========================================================
+# [UI 개선] 빠른 실행 버튼 (Quick Prompts)
+# =========================================================
+st.markdown("###### 👋 자주 사용하는 질문")  # 섹션 제목 (선택 사항)
+
+# 버튼 레이아웃 (3개 컬럼)
+col1, col2, col3 = st.columns(3)
+clicked_prompt = None
+
+# 버튼 생성 및 클릭 이벤트 처리
+# 버튼 라벨은 짧게, 실제 전송되는 메시지는 길게 설정
+if col1.button("📅 월말 구매 마감 리포트", use_container_width=True):
+    clicked_prompt = "월말 리포트 보내줘"
+
+if col2.button("📊 당월 자재 소요량", use_container_width=True):
+    clicked_prompt = "당월 자재별 소요량 보내줘"
+
+if col3.button("📂 발주 현황 공유 파일", use_container_width=True):
+    clicked_prompt = "자재 발주 현황 공유용 파일 만들어줘"
+
+# =========================================================
+# 사용자 입력 처리 (텍스트 입력 OR 버튼 클릭)
+# =========================================================
+chat_input_text = st.chat_input("질문을 입력하세요. (예: M-1001의 재고 가치는?)")
+
+# 텍스트 입력이 있으면 그것을 우선, 없으면 버튼 클릭 값을 사용
+user_input = chat_input_text if chat_input_text else clicked_prompt
 
 if user_input:
-    # 사용자 메시지 표시 & 저장
+    # 1. 사용자 메시지 표시 & 저장
     with st.chat_message("user"):
         st.write(user_input)
     st.session_state["messages"].append(HumanMessage(content=user_input))
 
-    # Agent 실행 (스트리밍)
+    # 2. Agent 실행 (스트리밍) - 기존 코드와 동일
     config = {"configurable": {"thread_id": "1"}}
 
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         full_response = ""
-        analysis_artifact = None  # 실행 결과 데이터 저장용
+        analysis_artifact = None
 
         try:
             # LangGraph 실행
             events = graph.stream({"messages": st.session_state["messages"]}, config)
 
             for event in events:
-                # Reasoner 이벤트 처리
+                # ... (이하 기존 Agent 실행 로직 그대로 유지) ...
                 if "reasoner" in event:
                     payload = event["reasoner"]
-                    # 메시지가 있는지 확인
                     if isinstance(payload, dict) and "messages" in payload:
                         last_msg = payload["messages"][-1]
-
-                        # content가 존재할 때만 업데이트
                         if hasattr(last_msg, 'content') and last_msg.content:
-                            full_response = last_msg.content  # 덮어쓰기 (완성된 문장)
+                            full_response = last_msg.content
                             message_placeholder.markdown(full_response + " ▌")
 
-                # Code Generator 이벤트 처리
                 if "code_generator" in event:
                     payload = event["code_generator"]
-                    # 생성된 코드가 있다면 UI에 표시
                     if "generated_code" in payload:
                         gen_code = payload["generated_code"]
                         with st.expander("AI가 생성한 분석 코드 확인", expanded=False):
                             st.code(gen_code, language="python")
 
-                # Code Executor 이벤트 처리 (시각화 데이터)
                 if "code_executor" in event:
                     payload = event["code_executor"]
-                    # 분석 결과 데이터 추출
                     if "analysis_data" in payload:
                         result = payload["analysis_data"].get("last_run_result")
                         if result is not None:
-                            # 화면에 즉시 렌더링
                             render_analysis_result(result)
-                            # 히스토리 저장을 위해 보관
                             analysis_artifact = result
 
-            # 스트리밍 완료 후 커서 제거
             message_placeholder.markdown(full_response)
 
-            # AI 응답 저장
             ai_msg = AIMessage(content=full_response)
             if analysis_artifact is not None:
                 ai_msg.additional_kwargs["artifact"] = analysis_artifact

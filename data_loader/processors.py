@@ -191,6 +191,7 @@ def process_purchase_order_info(df):
         "증빙일": "posting_date",
         "오더 수량": "order_qty",
         "오더 정가": "order_price",
+        "입고 수량": "good_reciept_qty"
     }
     df.rename(columns=mapping, inplace=True)
     for col in ["product_id", "po_id", "vendor_id"]:
