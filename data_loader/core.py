@@ -34,15 +34,18 @@ def save_uploaded_file_by_type(uploaded_file, source_type):
     if source_type not in FILE_PROCESSORS:
         return False, f"지원하지 않는 파일 형식입니다."
 
+    # 설정값 가져오기
     target_table, processor_func, strategy, pk_col = FILE_PROCESSORS[source_type]
     # 기존 데이터를 불러오기 위한 경로 설정
     file_path = os.path.join(DATA_DIR, f"{target_table}.csv")
 
     try:
         # 엑셀 파일 로드 및 전처리
-        if source_type == "생산 계획":
+        if target_table == "production_plan":
+            uploaded_file.seek(0)
             new_df = processor_func(uploaded_file)  # openpyxl은 파일 객체를 직접 필요로 함
         else:
+            uploaded_file.seek(0)
             raw_df = pd.read_excel(uploaded_file)
             new_df = processor_func(raw_df)
 
