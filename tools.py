@@ -6,90 +6,23 @@ from datetime import datetime, timedelta
 from langchain_core.tools import tool
 import data_loader
 
+# -------------------------------------------------------------------------
+# 0. 초기 설정 (Setup)
+# -------------------------------------------------------------------------
+
+# 마스터 데이터 로드 (서버 시작 시 1회 로드)
 DB = data_loader.load_master_data()
 
-# 저장 경로 설정
+# 결과 저장 경로 설정
 OUTPUT_DIR = "output"
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
 
-# @tool
-# def calculate_gross_requirement(plan_id: str):
-#     """
-#     소요량 전개 (Gross Requirement Calculation)
-#     특정 생산 계획(plan_id)에 대해 BOM을 전개하여 필요한 원자재 총 소요량을 계산합니다.
-#     """
-#
-#     # 생산 계획 조회
-#     plan = DB['production_plan'][DB['production_plan']['serial_no'] == plan_id]
-#     if plan.empty:
-#         return "해당 생산 계획이 존재하지 않습니다."
-#
-#     # target_product = plan.iloc[0]['product_id']
-#     # 이거 지금 사용 불가능 구하는 방법을 찾는 게 필요
-#     # plan_qty = plan.iloc[0]['planned_qty']
-#     # plan_qty = float(plan.iloc[0]['planned_qty'])
-#
-#     # BOM 조회
-#     # bom = DB['bom'][DB['bom']['parent_product_id'] == 8000313]
-#     # BOM 조회 (레벨 0.1 구성품만 대상)
-#     bom = DB['bom'][(DB['bom']['parent_product_id'] == 9309896) & (DB['bom']['level'] == '.1')]
-#     if bom.empty:
-#         return f"{DB['product'][DB['product']['product_id'] == '9309896']['description']}에 대한 BOM이 존재하지 않습니다."
-#
-#     def _calculate_overage(component_id: str, base_quantity: float) -> float:
-#         if DB['overage'].empty:
-#             return 0.0
-#
-#
-#         rules = DB['overage'][(DB['overage']['product_id'] == 9309896) & (DB['overage']['packing_code'] == component_id)]
-#         if rules.empty:
-#             return 0.0
-#
-#         # 투입량 범위 조회
-#         matched = rules[
-#             (rules['range_from'] <= base_quantity)
-#             & (base_quantity <= rules['range_to'])
-#         ]
-#         if matched.empty:
-#             return 0.0
-#
-#         rule = matched.iloc[0]
-#         overage_qty = 0.0
-#
-#         if pd.notna(rule.get('overage_abs_qty')):
-#             overage_qty = float(rule['overage_abs_qty'])
-#         elif pd.notna(rule.get('overage_rate')):
-#             overage_qty = base_quantity * float(rule['overage_rate']) / 100
-#
-#         # 올림 규칙 적용
-#         decimals = int(rule.get('rounding_decimal') or 0)
-#         factor = 10 ** decimals
-#         return math.ceil(overage_qty * factor) / factor
-#
-#     # 소요량 계산
-#     requirements = []
-#     for _, row in bom.iterrows():
-#         component_id = row['component_product_id']
-#         # base_requirement = float(row['component_qty'])
-#         base_requirement = 12000    # 항상 자유분방하게 바뀐다고 한다. 완제: 12000, 반제: 36500
-#         overage_qty = _calculate_overage(component_id, base_requirement)
-#         gross_requirement = base_requirement + overage_qty
-#
-#         try:
-#             description = DB['product'].loc[DB['product']['product_id'] == str(component_id), 'description'].values[0]
-#         except IndexError:
-#             description = "Unknown"
-#
-#         requirements.append({
-#             "component_product": description,
-#             "base_requirement": base_requirement,
-#             "overage_quantity": overage_qty,
-#             "gross_requirement": gross_requirement,
-#             "bom_level": row.get('level', 1)
-#         })
-#
-#     return pd.DataFrame(requirements).to_markdown(index=False)
+
+# -------------------------------------------------------------------------
+# 1. 핵심 분석 도구 (Core Analysis Tools)
+# -------------------------------------------------------------------------
+
 @tool
 def calculate_gross_requirement(plan_id: str) -> str:
     """
@@ -97,25 +30,23 @@ def calculate_gross_requirement(plan_id: str) -> str:
     오버리지(Overage) 규칙을 적용하여 여유분을 포함한 총 소요량을 산출합니다.
     """
     # 1. 생산 계획 조회
-    # (현재는 plan_id 매칭 로직이 하드코딩 값 위주로 동작하도록 설정됨)
+    # (실제 로직: plan_id로 조회해야 하나, 현재 테스트를 위해 하드코딩 값 사용)
     plan_df = DB.get('production_plan', pd.DataFrame())
 
-    # 임시: 하드코딩된 테스트 변수 (요청사항 반영)
-    # 실제 연동 시에는 plan_df에서 plan_id로 조회한 값을 사용해야 함
+    # [Test Config] 테스트용 하드코딩 변수
     target_product_id = "9309896"
-    plan_qty = 2  # 테스트용 고정 수량
-    base_requirement_per_unit = 12000  # 테스트용 단위 소요량
+    plan_qty = 2
+    base_requirement_per_unit = 12000
 
     # 2. BOM 조회 (레벨 .1 구성품 대상)
     bom_df = DB.get('bom', pd.DataFrame())
     if bom_df.empty:
         return "BOM 데이터가 없습니다."
 
-    # 하드코딩된 target_product_id 기준 조회
+    # 특정 제품에 대한 1차 BOM 조회
     bom = bom_df[(bom_df['parent_product_id'] == target_product_id) & (bom_df['level'] == '.1')]
 
     if bom.empty:
-        # 제품명 조회 시도
         try:
             prod_desc = DB['product'].loc[DB['product']['product_id'] == target_product_id, 'description'].values[0]
         except:
@@ -124,12 +55,15 @@ def calculate_gross_requirement(plan_id: str) -> str:
 
     # 내부 함수: 오버리지 계산 로직
     def _calculate_overage(component_id: str, base_qty: float) -> float:
-        overage_df = DB.get('overage_rule', pd.DataFrame())  # 테이블명 주의 (overage vs overage_rule)
+        # 테이블명 최신화: overage -> overage_rule
+        overage_df = DB.get('overage_rule', pd.DataFrame())
         if overage_df.empty:
             return 0.0
 
-        # ID 정규화 및 필터링
+        # ID 정규화 (String 변환 및 0 제거)
         target_comp_id = str(component_id).strip().lstrip('0')
+
+        # 해당 자재의 규칙 필터링
         rules = overage_df[overage_df['product_id'] == target_comp_id]
 
         if rules.empty:
@@ -147,13 +81,13 @@ def calculate_gross_requirement(plan_id: str) -> str:
         rule = matched.iloc[0]
         overage_val = 0.0
 
-        # 절대값 우선 적용, 없으면 비율 적용
+        # 절대값(abs) 우선 적용, 없으면 비율(rate) 적용
         if pd.notna(rule.get('overage_abs_qty')):
             overage_val = float(rule['overage_abs_qty'])
         elif pd.notna(rule.get('overage_rate')):
             overage_val = base_qty * float(rule['overage_rate']) / 100
 
-        # 올림 처리
+        # 올림 처리 (rounding_decimal)
         decimals = int(rule.get('rounding_decimal') or 0)
         factor = 10 ** decimals
         if decimals == 0:
@@ -165,8 +99,7 @@ def calculate_gross_requirement(plan_id: str) -> str:
     for _, row in bom.iterrows():
         component_id = row['component_product_id']
 
-        # [하드코딩 유지] 요청에 따라 고정된 base_requirement 사용
-        # 실제 로직: base_req = float(row['component_qty']) * plan_qty
+        # [Test Config] 단위당 고정 소요량 사용
         base_req = base_requirement_per_unit
 
         overage_qty = _calculate_overage(component_id, base_req)
@@ -191,214 +124,18 @@ def calculate_gross_requirement(plan_id: str) -> str:
 
 
 @tool
-def get_current_stock(product_ids: str):
-    """
-    현재 가용 재고 조회
-    """
-    p_ids = [pid.strip() for pid in product_ids.split(',')]
-    stock = DB['inventory'][DB['inventory']['product_id'].isin(p_ids)]
-    return stock.to_markdown()
-
-
-@tool
-def check_long_term_stock_criteria(product_id: str):
-    """
-    ADR-002: 자재별 장기재고 기준일 확인
-    Master Data에서 long_term_stock_days를 우선 확인합니다.
-    """
-    prod = DB['product'][DB['product']['product_id'] == product_id]
-    if prod.empty:
-        return "자재가 존재하지 않습니다."
-
-    days = prod.iloc[0]['long_term_stock_days']
-    if days == 0 or pd.isna(days):
-        return "Master Data에 기준일 없음. SOP 문서 탐색 필요."
-    return f"기준일: {days}일"
-
-
-# @tool
-# def get_stock_status(product_ids: str) -> str:
-#     """
-#     특정 자재의 현재 가용 재고(Warehouse Stock)를 조회합니다.
-#     입력: product_ids (쉼표로 구분된 자재 코드 문자열, 예: "MAT-001, MAT-002")
-#     """
-#     p_ids = [pid.strip() for pid in product_ids.split(',')]
-#
-#     # 창고 재고 테이블 사용
-#     stock_df = DB['warehouse_stock']
-#
-#     # 해당 자재 필터링
-#     target_stock = stock_df[stock_df['product_id'].isin(p_ids)]
-#
-#     if target_stock.empty:
-#         return "해당 자재의 재고 정보가 없습니다."
-#
-#     # 필요한 컬럼만 표시 (가용 재고 중심)
-#     # 매핑: 가용(unrestricted_qty), 품질 검사(inspection_qty), 보류(blocked_qty)
-#     result = target_stock[['product_id', 'batch_no', 'unrestricted_qty', 'inspection_qty', 'blocked_qty']]
-#     return result.to_markdown(index=False)
-
-
-@tool
-def get_stock_status(product_ids: str) -> str:
-    """
-    [재고 조회] 특정 자재(들)의 현재 창고 재고 현황을 조회합니다.
-    입력: product_ids (콤마로 구분된 자재 코드, 예: "1001, 1002")
-    """
-    stock_df = DB.get('warehouse_stock', pd.DataFrame())
-    if stock_df.empty:
-        return "재고 데이터가 없습니다."
-
-    p_ids = [pid.strip() for pid in str(product_ids).split(',')]
-
-    # 비교 전에 데이터프레임의 ID를 문자열로 강제 변환
-    stock_df['product_id'] = stock_df['product_id'].astype(str)
-
-    target_stock = stock_df[stock_df['product_id'].isin(p_ids)]
-
-    if target_stock.empty:
-        return "해당 자재의 재고 정보가 없습니다."
-
-    # 주요 컬럼만 표시
-    cols = ['product_id', 'batch_no', 'unrestricted_qty', 'inspection_qty', 'blocked_qty']
-    valid_cols = [c for c in cols if c in target_stock.columns]
-
-    return target_stock[valid_cols].to_markdown(index=False)
-
-# @tool
-# def generate_purchase_prediction(dummy_arg: str = "") -> str:
-#     """
-#     [시스템 예측] 전체 생산 계획을 기반으로 자재 발주 정보를 생성합니다.
-#
-#     동작 방식:
-#     1. 생산 계획(production_plan)을 날짜(start_date) 순으로 정렬합니다.
-#     2. 각 계획에 대해 BOM을 전개하여 필요 자재를 계산합니다.
-#     3. 현재고(warehouse_stock)에서 소요량을 차감하며(Running Balance), 재고가 부족해지는 시점에 발주 정보를 생성합니다.
-#     4. 결과는 엑셀 파일로 저장됩니다.
-#
-#     입력: 없음 (빈 문자열)
-#     """
-#     # 1. 데이터 준비
-#     plans = DB['production_plan'].copy()
-#     bom = DB['bom']
-#     stock = DB['warehouse_stock']
-#     products = DB['product']
-#     vendors = DB['vendor']
-#     po_history = DB['purchase_order']
-#
-#     if plans.empty:
-#         return "등록된 생산 계획이 없습니다."
-#
-#     # 날짜 형식 변환 및 정렬 (납기 준수를 위해 날짜순 처리 필수)
-#     plans['start_date'] = pd.to_datetime(plans['start_date'])
-#     plans = plans.sort_values('start_date')
-#
-#     # 현재 가용 재고 집계 (자재별 총합)
-#     current_stock = stock.groupby('product_id')['unrestricted_qty'].sum().to_dict()
-#
-#     prediction_rows = []
-#
-#     # 2. 계획 순회 (Time-phased MRP Logic)
-#     for _, plan in plans.iterrows():
-#         parent_id = plan.get('material_type')  # 혹은 식별 가능한 product code 컬럼 - 현재 없음
-#         # 주의: production_plan 매핑에 'product_id'가 없고 'material_type', 'packing_unit' 등만 있다면
-#         # 로직 수정이 필요할 수 있음. 여기서는 '비고'나 '자재 유형'을 통해 BOM Parent를 찾는다고 가정하거나,
-#         # 엑셀의 구조상 특정 컬럼이 Product ID 역할을 한다고 가정해야 합니다.
-#         # *가정*: 생산계획의 '자재 유형'이나 별도 컬럼이 Parent ID가 아닐 경우, 매핑 로직 점검 필요.
-#         # 일단 user prompt의 'production_plan'에는 'product_id'가 명시되어 있지 않음.
-#         # 'Remark'나 'Material Type' 등에 제품 코드가 있다고 가정하고 진행.
-#
-#         # (임시) material_type이나 remark에서 제품 코드를 유추 불가시 스킵
-#         # 여기서는 BOM 테이블의 parent_product_id 중 하나와 매칭된다고 가정
-#         # 실제 데이터에 맞게 조정 필요. 예시로 '자재 유형'을 제품코드로 사용
-#         # target_product = plan.get('material_type', 'UNKNOWN')
-#         target_product = 9309896
-#
-#         # plan_qty = float(plan.get('packing_unit', 0))
-#         plan_qty = 2
-#         delivery_date = plan['start_date'].strftime('%Y-%m-%d')
-#
-#         # BOM 전개
-#         plan_bom = bom[bom['parent_product_id'] == target_product]
-#         if plan_bom.empty:
-#             continue  # BOM 없으면 스킵
-#
-#         for _, comp in plan_bom.iterrows():
-#             comp_id = comp['component_product_id']
-#             unit_req = comp['component_qty']
-#             total_req = unit_req * plan_qty
-#
-#             # 가용 재고 확인 (Running Balance)
-#             available = current_stock.get(comp_id, 0)
-#
-#             if available >= total_req:
-#                 # 재고 충분 -> 차감만 하고 발주 없음
-#                 current_stock[comp_id] = available - total_req
-#             else:
-#                 # 재고 부족 -> 전량 사용 후 부족분 발주
-#                 shortage = total_req - available
-#                 current_stock[comp_id] = 0  # 재고 소진
-#
-#                 # 발주 정보 생성
-#                 # 1) 품목명 조회
-#                 prod_desc = ""
-#                 prod_row = products[products['product_id'] == comp_id]
-#                 if not prod_row.empty:
-#                     prod_desc = prod_row.iloc[0]['description']
-#
-#                 # 2) 공급업체 조회 (최근 구매 이력 기반 추론)
-#                 vendor_name = "업체 미지정"
-#                 hist = po_history[po_history['product_id'] == comp_id]
-#                 if not hist.empty:
-#                     # 최근 PO 기준
-#                     last_vendor_id = hist.iloc[-1]['vendor_id']
-#                     v_row = vendors[vendors['vendor_id'] == last_vendor_id]
-#                     if not v_row.empty:
-#                         vendor_name = v_row.iloc[0]['vendor_name']
-#
-#                 prediction_rows.append({
-#                     "품목코드": comp_id,
-#                     "품목명": prod_desc,
-#                     "수량": shortage,
-#                     "납품일자": delivery_date,
-#                     "공급업체": vendor_name
-#                 })
-#
-#     # 3. 결과 파일 생성
-#     if not prediction_rows:
-#         return "모든 생산 계획에 대해 자재 재고가 충분합니다. (발주 필요 없음)"
-#
-#     df_result = pd.DataFrame(prediction_rows)
-#
-#     # 동일 날짜, 동일 품목, 동일 업체의 경우 합산 (Option)
-#     # df_result = df_result.groupby(['품목코드', '품목명', '납품일자', '공급업체'], as_index=False)['수량'].sum()
-#
-#     # 컬럼 순서 강제 (A~E)
-#     cols = ["품목코드", "품목명", "수량", "납품일자", "공급업체"]
-#     final_df = df_result[cols]
-#
-#     save_dir = "output"
-#     if not os.path.exists(save_dir):
-#         os.makedirs(save_dir)
-#
-#     file_path = os.path.join(save_dir, "Purchase_Order_Prediction.xlsx")
-#     final_df.to_excel(file_path, index=False)
-#
-#     return f"발주 예측 파일 생성이 완료되었습니다.\n경로: {file_path}\n총 {len(final_df)}건의 발주 필요 항목이 도출되었습니다."
-
-
-@tool
 def generate_purchase_prediction(dummy_arg: str = "") -> str:
     """
     [발주 예측] 전체 생산 계획과 현재 재고를 분석하여 자재별 발주 필요량을 예측합니다.
-    (Time-phased MRP 로직 적용)
+    (Time-phased MRP 로직 적용, 원자재 ROH1/ROH2 대상)
     """
-    # 데이터 준비
+    # 1. 데이터 준비
     plans = DB.get('production_plan', pd.DataFrame()).copy()
     bom = DB.get('bom', pd.DataFrame())
     stock = DB.get('warehouse_stock', pd.DataFrame())
     products = DB.get('product', pd.DataFrame())
-    vendors = DB.get('vendor_info_record', pd.DataFrame())  # 테이블명 변경 반영
+    vendors = DB.get('vendor_info_record', pd.DataFrame())  # 테이블명 최신화
+    po_history = DB.get('purchase_order', pd.DataFrame())
 
     if plans.empty:
         return "등록된 생산 계획이 없습니다."
@@ -411,14 +148,19 @@ def generate_purchase_prediction(dummy_arg: str = "") -> str:
     # 현재 가용 재고 집계 (Product ID별 Sum)
     current_stock = {}
     if not stock.empty and 'unrestricted_qty' in stock.columns:
+        # ID 문자열 변환 후 집계
+        stock['product_id'] = stock['product_id'].astype(str)
         current_stock = stock.groupby('product_id')['unrestricted_qty'].sum().to_dict()
 
     prediction_rows = []
 
-    # 계획 순회
+    # 발주 대상 자재 유형 정의
+    TARGET_MAT_TYPES = ['ROH1', 'ROH2']
+
+    # 2. 계획 순회
     for _, plan in plans.iterrows():
-        # [하드코딩 유지] 요청에 따라 테스트용 ID 사용
-        target_product = "9309896"
+        # [Test Config] 하드코딩된 테스트 변수 유지
+        target_product = 9309896
         plan_qty = 2
 
         delivery_date = plan['start_date'].strftime('%Y-%m-%d') if 'start_date' in plan else "Unknown"
@@ -429,7 +171,17 @@ def generate_purchase_prediction(dummy_arg: str = "") -> str:
             continue
 
         for _, comp in plan_bom.iterrows():
-            comp_id = comp['component_product_id']
+            comp_id = str(comp['component_product_id'])
+
+            # 자재 유형 확인 (원자재만 발주)
+            if not products.empty:
+                product_info = products[products['product_id'] == comp_id]
+                if not product_info.empty:
+                    mat_type = product_info.iloc[0].get('product_type', '')
+                    # 반제품(HALB) 제외, 지정된 원자재만 포함
+                    if mat_type == 'HALB' or (TARGET_MAT_TYPES and mat_type not in TARGET_MAT_TYPES):
+                        continue
+
             unit_req = comp['component_qty']
             total_req = unit_req * plan_qty
 
@@ -452,9 +204,10 @@ def generate_purchase_prediction(dummy_arg: str = "") -> str:
                 # 주 공급업체 찾기
                 vendor_name = "미지정"
                 if not vendors.empty:
-                    # is_fixed_vendor가 'X'인 업체 우선, 없으면 첫 번째 업체
-                    v_rows = vendors[vendors['product_id'] == comp_id]
+                    # ID 매칭 시 문자열 변환 안전장치
+                    v_rows = vendors[vendors['product_id'].astype(str) == comp_id]
                     if not v_rows.empty:
+                        # is_fixed_vendor가 'X'인 업체 우선
                         fixed = v_rows[v_rows['is_fixed_vendor'] == 'X']
                         if not fixed.empty:
                             vendor_name = fixed.iloc[0]['vendor_name']
@@ -470,14 +223,87 @@ def generate_purchase_prediction(dummy_arg: str = "") -> str:
                 })
 
     if not prediction_rows:
-        return "모든 생산 계획에 대해 자재 재고가 충분합니다."
+        return "모든 생산 계획에 대해 자재 재고가 충분하거나, 발주 대상 원자재가 없습니다."
 
     # 결과 저장
     df_result = pd.DataFrame(prediction_rows)
     file_path = os.path.join(OUTPUT_DIR, f"Purchase_Prediction_{datetime.now().strftime('%Y%m%d')}.xlsx")
+
+    # 엑셀 저장
     df_result.to_excel(file_path, index=False)
 
     return f"발주 예측 결과가 생성되었습니다.\n파일 경로: {file_path}\n총 {len(df_result)}건의 발주가 필요합니다."
+
+
+# -------------------------------------------------------------------------
+# 2. 조회 및 유틸리티 도구 (Lookup & Utility Tools)
+# -------------------------------------------------------------------------
+
+@tool
+def get_current_stock(product_ids: str) -> str:
+    """
+    [현재고 간편 조회] 특정 자재들의 현재 재고 수량을 마크다운 형태로 반환합니다.
+    """
+    p_ids = [pid.strip() for pid in str(product_ids).split(',')]
+    stock = DB.get('warehouse_stock', pd.DataFrame())
+
+    if stock.empty:
+        return "재고 데이터가 없습니다."
+
+    # ID 문자열 변환
+    stock['product_id'] = stock['product_id'].astype(str)
+    target_stock = stock[stock['product_id'].isin(p_ids)]
+
+    return target_stock.to_markdown(index=False)
+
+
+@tool
+def check_long_term_stock_criteria(product_id: str) -> str:
+    """
+    [장기재고 기준 확인] ADR-002: 자재 마스터에 정의된 장기재고 기준일(long_term_stock_days)을 확인합니다.
+    """
+    prod = DB.get('product', pd.DataFrame())
+    if prod.empty:
+        return "자재 마스터 데이터가 없습니다."
+
+    target_id = str(product_id).strip()
+    row = prod[prod['product_id'] == target_id]
+
+    if row.empty:
+        return "해당 자재가 존재하지 않습니다."
+
+    days = row.iloc[0].get('long_term_stock_days')
+    if not days or pd.isna(days) or days == 0:
+        return "Master Data에 기준일 설정 없음. SOP 문서 확인 필요."
+
+    return f"장기재고 기준일: {days}일"
+
+
+@tool
+def get_stock_status(product_ids: str) -> str:
+    """
+    [재고 상세 조회] 특정 자재(들)의 현재 창고 재고 현황(가용, 보류, 검사 등)을 상세 조회합니다.
+    입력: product_ids (콤마로 구분된 자재 코드, 예: "1001, 1002")
+    """
+    stock_df = DB.get('warehouse_stock', pd.DataFrame())
+    if stock_df.empty:
+        return "재고 데이터가 없습니다."
+
+    p_ids = [pid.strip() for pid in str(product_ids).split(',')]
+
+    # [필수] 비교 전에 데이터프레임의 ID를 문자열로 강제 변환 (Type Mismatch 방지)
+    stock_df['product_id'] = stock_df['product_id'].astype(str)
+
+    target_stock = stock_df[stock_df['product_id'].isin(p_ids)]
+
+    if target_stock.empty:
+        return "해당 자재의 재고 정보가 없습니다."
+
+    # 주요 컬럼만 표시
+    cols = ['product_id', 'batch_no', 'unrestricted_qty', 'inspection_qty', 'blocked_qty']
+    valid_cols = [c for c in cols if c in target_stock.columns]
+
+    return target_stock[valid_cols].to_markdown(index=False)
 
 
 @tool

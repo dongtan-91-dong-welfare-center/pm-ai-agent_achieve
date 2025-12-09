@@ -27,7 +27,6 @@ base_tools = [
     get_stock_status,
     generate_purchase_prediction,
     calculate_gross_requirement,
-    # analyze_long_term_stock,
 ]
 
 # 라우팅용 도구 (Pydantic 모델) 추가
