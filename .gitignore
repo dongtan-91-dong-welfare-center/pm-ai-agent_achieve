@@ -34,3 +34,7 @@ Thumbs.db
 
 # --- 회의록 ---
 /meeting_notes/
+
+# --- 테스트 코드 ---
+/tests/
+
