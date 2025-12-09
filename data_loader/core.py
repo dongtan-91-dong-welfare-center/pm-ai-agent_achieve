@@ -17,6 +17,7 @@ FILE_PROCESSORS = {
     # 2. 계획 및 오더 (Planning & Order)
     "생산 계획(production_plan)": ("production_plan", processors.process_production_plan, "REPLACE_ALL", None),
     "구매오더(purchase_order)": ("purchase_order", processors.process_purchase_order_info, "REPLACE_ALL", None),
+    "생산품목코드 매핑(prod_plan_code_map)": ("prod_plan_code_map", processors.process_prod_plan_code_map_info, "REPLACE_ALL", None),
 
     # 3. 이력 데이터 (History) - [신규 추가됨]
     "구매/재무 내역(purchase_transaction_history)": ("purchase_transaction_history", processors.process_purchase_transaction_history_info, "REPLACE_ALL", None),

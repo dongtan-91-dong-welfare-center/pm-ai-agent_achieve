@@ -314,6 +314,17 @@ def process_warehouse_stock_info(df):
     df = _normalize_id_columns(df, ["product_id", "batch_no", ])
     return df[mapping.values()]
 
+def process_prod_plan_code_map_info(df):
+    """[prod_plan_code_map] 생산품목코드 정보 추가"""
+    mapping = {
+        "자재": "product_id",
+        "자재 내역": "description",
+        "국가": "country",
+        "유닛": "packing_unit"
+    }
+    df.rename(columns=mapping, inplace=True)
+    df = _normalize_id_columns(df, ["product_id"])
+    return df[mapping.values()]
 
 def process_production_plan(uploaded_file):
     """

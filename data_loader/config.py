@@ -204,13 +204,12 @@ TABLE_SCHEMA = {
         "blocked_stock_value",
         "receipt_date",
     ],
-# 12. 생산계획-품목코드 매핑 (prod_plan_code_map)
+# 12. 생산품목코드 매핑 (prod_plan_code_map)-추가됨
     "prod_plan_code_map": [
         "product_id",
         "description",
         "country",
         "packing_unit",
-
     ],
 
 }
