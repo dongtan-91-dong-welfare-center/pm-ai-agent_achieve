@@ -316,12 +316,15 @@ def process_warehouse_stock_info(df):
 
 def process_prod_plan_code_map_info(df):
     """[prod_plan_code_map] 생산품목코드 정보 추가"""
+    print(f"DEBUG: 엑셀 컬럼 목록 = {df.columns.tolist()}")
     mapping = {
         "자재": "product_id",
         "자재 내역": "description",
         "국가": "country",
         "유닛": "packing_unit"
     }
+
+    # ...
     df.rename(columns=mapping, inplace=True)
     df = _normalize_id_columns(df, ["product_id"])
     return df[mapping.values()]
