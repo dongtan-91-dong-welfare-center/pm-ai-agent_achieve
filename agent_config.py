@@ -18,7 +18,9 @@ if not api_key:
 llm = ChatGoogleGenerativeAI(
     temperature=0,
     model=model_name,
-    google_api_key=api_key
+    google_api_key=api_key,
+    transport="rest"
+
 )
 
 # 실제 실행되는 도구 목록

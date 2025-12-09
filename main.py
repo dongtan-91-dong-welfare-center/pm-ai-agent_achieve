@@ -231,7 +231,7 @@ clicked_prompt = None
 if col1.button("📅 월말 구매 마감 리포트", use_container_width=True):
     clicked_prompt = "월말 리포트 보내줘"
 
-if col2.button("📊 당월 자재 소요량", use_container_width=True):
+if col2.button("📊 월별 자재 소요량", use_container_width=True):
     clicked_prompt = "당월 자재별 소요량 보내줘"
 
 if col3.button("📂 발주 현황 공유 파일", use_container_width=True):
