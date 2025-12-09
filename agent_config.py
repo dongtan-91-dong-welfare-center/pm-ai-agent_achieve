@@ -4,7 +4,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from agent_state import PythonAnalysisRequest, FinalizeOrderRequest
-from tools import get_stock_status, generate_purchase_prediction, calculate_gross_requirement, analyze_long_term_stock
+from tools import get_stock_status, generate_purchase_prediction, calculate_gross_requirement
 
 # 환경 변수 로드
 load_dotenv()
@@ -26,7 +26,7 @@ base_tools = [
     get_stock_status,
     generate_purchase_prediction,
     calculate_gross_requirement,
-    analyze_long_term_stock,
+    # analyze_long_term_stock,
 ]
 
 # 라우팅용 도구 (Pydantic 모델) 추가

@@ -1,7 +1,7 @@
 import math
-
-from langchain_core.tools import tool
 import pandas as pd
+import os
+from langchain_core.tools import tool
 import data_loader
 
 DB = data_loader.load_master_data()
@@ -106,15 +106,6 @@ def check_long_term_stock_criteria(product_id: str):
         return "Master Data에 기준일 없음. SOP 문서 탐색 필요."
     return f"기준일: {days}일"
 
-import os
-import pandas as pd
-from langchain_core.tools import tool
-import data_loader
-
-# 데이터 로드 (서버 시작 시 1회 로드)
-DB = data_loader.load_master_data()
-
-
 @tool
 def get_stock_status(product_ids: str) -> str:
     """
@@ -136,36 +127,6 @@ def get_stock_status(product_ids: str) -> str:
     # 매핑: 가용(unrestricted_qty), 품질 검사(inspection_qty), 보류(blocked_qty)
     result = target_stock[['product_id', 'batch_no', 'unrestricted_qty', 'inspection_qty', 'blocked_qty']]
     return result.to_markdown(index=False)
-
-
-@tool
-def calculate_gross_requirement(target_product_id: str, plan_qty: int) -> str:
-    """
-    단일 제품에 대한 BOM을 전개하여 총 소요량(Gross Requirement)을 계산합니다.
-    재고를 고려하지 않은 순수 소요량입니다.
-    """
-    # BOM 조회
-    bom = DB['bom']
-    target_bom = bom[bom['parent_product_id'] == target_product_id]
-
-    if target_bom.empty:
-        return f"{target_product_id}에 대한 BOM 정보가 없습니다."
-
-    requirements = []
-    for _, row in target_bom.iterrows():
-        comp_id = row['component_product_id']
-        comp_qty = row['component_qty']
-
-        req_qty = comp_qty * plan_qty
-
-        requirements.append({
-            "component_product_id": comp_id,
-            "required_qty": req_qty,
-            "level": row.get('level', 1)
-        })
-
-    return pd.DataFrame(requirements).to_markdown(index=False)
-
 
 @tool
 def generate_purchase_prediction(dummy_arg: str = "") -> str:
@@ -245,7 +206,6 @@ def generate_purchase_prediction(dummy_arg: str = "") -> str:
                 # 1) 품목명 조회
                 prod_desc = ""
                 prod_row = products[products['product_id'] == comp_id]
-                print(prod_row, "가 존재합니까?")
                 if not prod_row.empty:
                     prod_desc = prod_row.iloc[0]['description']
 
