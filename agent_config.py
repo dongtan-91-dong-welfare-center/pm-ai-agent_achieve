@@ -19,8 +19,7 @@ llm = ChatGoogleGenerativeAI(
     temperature=0,
     model=model_name,
     google_api_key=api_key,
-    transport="rest"
-
+    transport="rest",
 )
 
 # 실제 실행되는 도구 목록
@@ -28,6 +27,7 @@ base_tools = [
     get_stock_status,
     generate_purchase_prediction,
     calculate_gross_requirement,
+    # analyze_long_term_stock,
 ]
 
 # 라우팅용 도구 (Pydantic 모델) 추가

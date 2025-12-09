@@ -28,6 +28,15 @@ def get_merged_date(ws, cell, date_row, current_col, year, month):
     except Exception:
         return None, None
 
+
+def _normalize_id_columns(df, cols):
+    """[Helper] ID 컬럼의 공백 제거 및 앞자리 0 제거 (정규화)"""
+    for col in cols:
+        if col in df.columns:
+            # 1. 문자열 변환 -> 2. 공백 제거 -> 3. 앞자리 '0' 제거
+            df[col] = df[col].astype(str).str.strip().str.lstrip('0')
+    return df
+
 # 파일 종류별 전처리 로직
 def process_product_info(df):
     """[Product] 자재 정보의 뼈대 추가"""
@@ -35,17 +44,32 @@ def process_product_info(df):
     mapping = {
         "자재 유형": "product_type", "플랜트": "plant_code", "자재": "product_id", "자재 내역": "description",
         "기본 단위": "base_unit", "플랜트별 자재 상태": "plant_status", "생산 저장 위치": "prod_storage_loc",
-        "EP 저장 위치": "ep_storage_loc", "잔여 유효 기간": "remaining_shelf_life_days",
-        "총 셀프 라이프": "total_shelf_life_days", "검사설정": "inspection_setting",
+        "EP 저장 위치": "ep_storage_loc", "잔여 유효 기간": "remaining_shelf_life", "총 셀프 라이프": "total_shelf_life",
+        "검사설정": "inspection_setting",
     }
     df.rename(columns=mapping, inplace=True)
     # 필수 PK가 없으면 드랍
     df.dropna(subset=["product_id"], inplace=True)
     # 중복 제거 (Product ID 기준)
     df.drop_duplicates(subset=["product_id"], keep="last", inplace=True)
+    # ID 정규화
+    df = _normalize_id_columns(df, ["product_id"])
     # 필수 컬럼만 남기기 (데이터 제거)
     valid_cols = [c for c in mapping.values() if c in df.columns]
     return df[valid_cols]
+
+
+def process_edition_info(df):
+    """[Product] 에디션 정보를 추가함"""
+    mapping = {
+        "자재": "product_id",
+        "자재그룹": "product_group",
+        "자재그룹 내역": "product_group_name",
+        "Edition No.": "edition_no",
+    }
+    df.rename(columns=mapping, inplace=True)
+    df = _normalize_id_columns(df, ["product_id"])
+    return df[mapping.values()]  # 필요한 컬럼만 리턴
 
 
 def process_attachment_info(df):
@@ -55,40 +79,16 @@ def process_attachment_info(df):
         "외부착인": "is_attachment",
     }
     df.rename(columns=mapping, inplace=True)
-
+    df = _normalize_id_columns(df, ["product_id"])
     # 로직 적용(필요 시 추가)
     # df['is_attachment'] = df['is_attachment'].map({'X': "No", None: "Yes"})
-    return df[mapping.values()]  # 필요한 컬럼만 리턴
-
-
-def process_edition_info(df):
-    """[Product] 에디션 정보를 추가함"""
-    mapping = {
-        "자재": "product_id",
-        "자재그룹": "product_group",
-        "자재그룹 내역": "product_group_description",
-        "Edition No.": "edition_no",
-    }
-    df.rename(columns=mapping, inplace=True)
-    return df[mapping.values()]  # 필요한 컬럼만 리턴
-
-
-def process_vendor_info(df):
-    """[Vendor] 공급업체 정보 추가"""
-    mapping = {
-        "공급업체": "vendor_id",
-        "공급업체 이름": "vendor_name",
-        "구매 조직": "purchase_org",
-        "오더 통화": "order_currency"
-    }
-    df.rename(columns=mapping, inplace=True)
     return df[mapping.values()]  # 필요한 컬럼만 리턴
 
 
 def process_bom_info(df):
     """[BOM] 자재 명세서 정보 추가"""
     mapping = {
-        "자재번호(Root)": "product_id",
+        "자재번호(Root)": "root_product_id",
         "기준 수량": "standard_qty",
         "레벨": "level",
         "상위자재": "parent_product_id",
@@ -96,21 +96,58 @@ def process_bom_info(df):
         "구성부품수량": "component_qty",
     }
     df.rename(columns=mapping, inplace=True)
-    # 데이터 타입 보정 (Agent가 Join할 때 중요)
-    # 외래키(FK) 역할을 하는 컬럼들은 문자열로 통일해줘야 나중에 Join이 잘 됨
-    for col in ["product_id", "parent_product_id", "component_product_id"]:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.strip()
+    df = _normalize_id_columns(df, ["root_product_id", "parent_product_id", "component_product_id", ])
     return df[mapping.values()]
 
 
+def process_vendor_info(df):
+    """[Vendor] 공급업체 정보 추가"""
+    mapping = {
+        "Fix": "is_fixed_vendor",
+        "플랜트": "plant_code",
+        "공급업체": "vendor_id",
+        "업체명": "vendor_name",
+        "자재번호": "product_id",
+        "유효시작일": "valid_from",
+        "유효만료일": "valid_to",
+        "제조자": "manufacturer_id",
+        "제조자명": "manufacturer_name",
+        "구매그룹": "purchasing_group",
+        "구매그룹명": "purchasing_group_name",
+        "발주단위": "order_unit",
+        "기본단위": "base_unit",
+        "단가": "unit_price",
+        "통화": "currency",
+        "가격단위": "price_unit"
+    }
+    df.rename(columns=mapping, inplace=True)
+    df = _normalize_id_columns(df, ["product_id", "vendor_id", "manufacturer_id", ])
+    return df[mapping.values()]  # 필요한 컬럼만 리턴
+
+
+def process_overage_rule_info(df):
+    """[Overage] 자재별 오버리지 기준 매핑"""
+    mapping = {
+        "자재": "product_id",
+        "포장재코드": "packing_code",
+        "투입량 범위(FROM)": "range_from",
+        "투입량 범위(TO)": "range_to",
+        "오버리지 수량(절대값)": "overage_abs_qty",
+        "오버리지 비율(%)": "overage_rate",
+        "올림 소수점 자릿수": "rounding_decimal",
+    }
+    df.rename(columns=mapping, inplace=True)
+
+    df = _normalize_id_columns(df, ["product_id"])
+
+    return df[list(mapping.values())]
+
+
 def process_material_ledger_info(df):
-    """[Material_Ledger] 자재수불부(기간별 흐름)"""
+    """[Material_Ledger] 자재수불부 매핑"""
     mapping = {
         "자재": "product_id",
         "Cncy": "currency",
-
-        # material_ledger
         "표준원가": "standard_price",
         "기초(수량)": "opening_qty",
         "기초(금액)합계": "opening_amount",
@@ -140,6 +177,7 @@ def process_material_ledger_info(df):
         "코스트센터출고(수량)": "cost_center_issue_qty",
         "코스트센터출고(금액)": "cost_center_issue_price",
         "코스트센터출고(가격차이)": "cost_center_issue_price_diff",
+        "코스트센터출고(조정)": "cost_center_issue_adjustment",  # [추가] 누락된 컬럼
 
         "기타출고(수량)": "other_issue_qty",
         "기타출고(금액)": "other_issue_price",
@@ -149,16 +187,51 @@ def process_material_ledger_info(df):
         "소비(금액)합계": "total_issue_amount",
         "소비(가격차이)합계": "total_issue_price_diff",
 
-        # "총 가격 차이": "total_price_diff",
+        "가격 차이": "total_price_diff",  # 주의: 엑셀 헤더 중복 가능성 확인 필요
 
         "기말(수량)": "closing_qty",
         "기말(금액)합계": "closing_amount",
     }
 
     df.rename(columns=mapping, inplace=True)
-    if "product_id" in df.columns:
-        df["product_id"] = df["product_id"].astype(str).str.strip()
+
+    df = _normalize_id_columns(df, ["product_id"])
+
     return df[mapping.values()]
+
+
+def process_purchase_transaction_history_info(df):
+    """[Purchase_Transaction_History] 구매/재무 상세 내역"""
+    mapping = {
+        "구매문서번호": "po_id",
+        "구매품목": "po_item_no",
+        "입고일자": "receipt_date",
+        "이동유형": "movement_type",
+        "자재코드": "product_id",
+        "오더수량": "order_qty",
+        "Info.Rec.수정일": "info_rec_date",
+        "OLD값": "old_price",
+        "NEW값": "new_price",
+        "마스터단가": "master_price",
+        "마스터단가통화": "master_price_currency",
+        "오더단가": "order_price",
+        "통화": "order_currency",
+        "단가단위수량": "price_unit",
+        "입고수량": "received_quantity",
+        "입고금액(발주통화)": "received_value_local_currency",
+        "제판비": "printing_plate_cost",
+        "동판비": "copper_plate_cost",
+        "입고총금액(발주통화)": "total_received_value_local_currency",
+        "입고총금액(원화)": "total_received_value_krw",
+        "구매업체": "vendor_id"
+    }
+
+    df.rename(columns=mapping, inplace=True)
+
+    # ID 정규화
+    df = _normalize_id_columns(df, ["po_id", "product_id", "vendor_id"])
+
+    return df[list(mapping.values())]
 
 
 def process_good_receipt_info(df):
@@ -176,9 +249,8 @@ def process_good_receipt_info(df):
         "검사로트번호": "inspection_lot_no",
     }
     df.rename(columns=mapping, inplace=True)
-    for col in ["product_id", "po_id"]:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.strip()
+    df = _normalize_id_columns(df, ["po_id", "product_id", "batch_no"])
+
     return df[mapping.values()]
 
 
@@ -186,17 +258,17 @@ def process_purchase_order_info(df):
     """[Purchase_Order] 구매 오더 정보 추가"""
     mapping = {
         "구매 문서": "po_id",
+        "품목": "item_no",
         "공급업체": "vendor_id",
         "자재": "product_id",
-        "증빙일": "posting_date",
-        "오더 수량": "order_qty",
-        "오더 정가": "order_price",
-        "입고 수량": "good_reciept_qty"
+        "구매 오더일": "po_date",
+        "예정 수량": "schedule_qty",
+        "GR 수량": "received_qty",
+        "납품일": "delivery_date"
     }
+
     df.rename(columns=mapping, inplace=True)
-    for col in ["product_id", "po_id", "vendor_id"]:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.strip()
+    df = _normalize_id_columns(df, ["product_id", "po_id", "vendor_id"])
     return df[mapping.values()]
 
 
@@ -207,6 +279,7 @@ def process_batch_stock_info(df):
         "제조일": "manufacture_date",
         "유효 기한": "expiration_date",
         "배치": "batch_no",
+        "자재 그룹": "material_group",
         "가용": "available_qty",
         "품질 검사": "quality_inspection_qty",
         "보류재고": "blocked_stock",
@@ -216,8 +289,7 @@ def process_batch_stock_info(df):
         "입고일": "receipt_date",
     }
     df.rename(columns=mapping, inplace=True)
-    if "product_id" in df.columns:
-        df["product_id"] = df["product_id"].astype(str).str.strip()
+    df = _normalize_id_columns(df, ["product_id", "batch_no", ])
     return df[mapping.values()]
 
 
@@ -239,8 +311,7 @@ def process_warehouse_stock_info(df):
         "이전중 (플랜트)": "plant_transfer_in_progress",
     }
     df.rename(columns=mapping, inplace=True)
-    if "product_id" in df.columns:
-        df["product_id"] = df["product_id"].astype(str).str.strip()
+    df = _normalize_id_columns(df, ["product_id", "batch_no", ])
     return df[mapping.values()]
 
 
