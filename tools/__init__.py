@@ -30,5 +30,6 @@ AGENT_TOOLS = [
     analyze_long_term_stock,
     calculate_gross_requirement,
     generate_purchase_prediction,
-    generate_excel_report
+    generate_excel_report,
+    run_monthly_closing_process
 ]

@@ -36,8 +36,6 @@ for msg in st.session_state.messages:
             if "artifact" in msg.additional_kwargs:
                 ui.render_analysis_result(msg.additional_kwargs["artifact"])
 
-# 사용자 입력 처리 (텍스트 입력 or 버튼 클릭)
-quick_prompt = ui.render_quick_prompts()
 chat_input = st.chat_input("질문을 입력하세요.")
 
 user_input = chat_input if chat_input else quick_prompt
