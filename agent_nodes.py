@@ -8,6 +8,7 @@ from data_loader import TABLE_SCHEMA
 from prompt import format_schema_for_prompt, CODE_GEN_SYSTEM_PROMPT
 import tools
 
+
 # 데이터 직렬화 헬퍼 함수
 def serialize_result(data):
     """
