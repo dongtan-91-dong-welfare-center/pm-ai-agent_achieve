@@ -1,0 +1,44 @@
+# --- 환경 변수 및 비밀 키 ---
+# 절대로 비밀 키를 Git에 올리지 마세요!
+.env
+.env.*
+
+# --- Poetry 및 Python 가상 환경 ---
+# Poetry가 생성하는 가상 환경 폴더
+.venv/
+venv/
+*.venv
+
+# Poetry 캐시
+.poetry-cache/
+
+# Python 캐시 파일
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- IDE 설정 ---
+# VSCode
+.vscode/
+
+# PyCharm
+.idea/
+
+# --- 운영체제(OS) 자동 생성 파일 ---
+# Windows
+Thumbs.db
+
+# --- 실제 현업 데이터 DATA ---
+/data/
+
+# --- 회의록 ---
+/meeting_notes/
+
+# --- 테스트 코드 ---
+/tests/
+
+# --- 결과물 ---
+/output/
+
+

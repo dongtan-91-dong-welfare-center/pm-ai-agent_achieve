@@ -1,0 +1,32 @@
+[tool.poetry]
+package-mode = false
+
+[project]
+name = "pm-ai-agent"
+version = "0.1.0"
+description = "Production` Management AI Agent (Python Service)"
+authors = [
+    {name = "qldrh112",email = "didie8520@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.11, <=3.14"
+dependencies = [
+    "langgraph (>=1.0.3,<2.0.0)",
+    "streamlit (>=1.51.0,<2.0.0)",
+    "python-dotenv (>=1.2.1,<2.0.0)",
+    "pandas (>=2.3.3,<3.0.0)",
+    "langchain-google-genai (>=3.1.0,<4.0.0)",
+    "tabulate (>=0.9.0,<0.10.0)",
+    "langchain-experimental (>=0.4.0,<0.5.0)",
+    "openpyxl (>=3.1.5,<4.0.0)",
+    "pip-system-certs (>=5.3,<6.0)"
+]
+
+[tool.poetry.group.test.dependencies]
+pytest = ">=8.0.0,<10.0.0"
+pytest-cov = ">=4.1.0,<6.0.0"
+pytest-mock = ">=3.14.0,<5.0.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
