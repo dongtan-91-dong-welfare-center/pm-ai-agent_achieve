@@ -118,8 +118,9 @@ def calculate_gross_requirement(plan_id: str) -> str:
 
     if bom.empty:
         try:
-            prod_desc = DB['product'].loc[DB['product']['product_id'] == target_product_id, 'description'].values[0]
-        except:
+            prod_series = DB['product'].loc[DB['product']['product_id'] == target_product_id, 'description']
+            prod_desc = prod_series.iloc[0] if not prod_series.empty else target_product_id
+        except Exception:
             prod_desc = target_product_id
         return f"제품({prod_desc})에 대한 BOM 정보가 존재하지 않습니다."
 
@@ -156,8 +157,9 @@ def calculate_gross_requirement(plan_id: str) -> str:
         gross_req = base_req + overage_qty
 
         try:
-            comp_desc = DB['product'].loc[DB['product']['product_id'] == str(component_id), 'description'].values[0]
-        except:
+            comp_series = DB['product'].loc[DB['product']['product_id'] == str(component_id), 'description']
+            comp_desc = comp_series.iloc[0] if not comp_series.empty else "Unknown"
+        except Exception:
             comp_desc = "Unknown"
 
         requirements.append({
