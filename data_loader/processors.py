@@ -1,6 +1,7 @@
 import pandas as pd
 import openpyxl
 import re
+from typing import List, Union
 
 # 헬퍼 함수
 def get_merged_date(ws, cell, date_row, current_col, year, month):
@@ -67,7 +68,7 @@ def process_product_info(df):
     return df[valid_cols]
 
 
-def process_edition_info(df):
+def process_edition_info(df: pd.DataFrame) -> pd.DataFrame:
     """[Product] 에디션 정보를 추가함"""
     mapping = {
         "자재": "product_id",
@@ -77,10 +78,10 @@ def process_edition_info(df):
     }
     df.rename(columns=mapping, inplace=True)
     df = _normalize_id_columns(df, ["product_id"])
-    return df[mapping.values()]  # 필요한 컬럼만 리턴
+    return df[list(mapping.values())]  # 필요한 컬럼만 리턴
 
 
-def process_attachment_info(df):
+def process_attachment_info(df: pd.DataFrame) -> pd.DataFrame:
     """[Product] 외부 착인 정보를 추가함"""
     mapping = {
         "자재": "product_id",
@@ -90,10 +91,12 @@ def process_attachment_info(df):
     df = _normalize_id_columns(df, ["product_id"])
     # 로직 적용(필요 시 추가)
     # df['is_attachment'] = df['is_attachment'].map({'X': "No", None: "Yes"})
-    return df[mapping.values()]  # 필요한 컬럼만 리턴
+    # 반환 컬럼은 실제 존재하는 컬럼만 선택
+    cols = [c for c in list(mapping.values()) if c in df.columns]
+    return df[cols]  # 필요한 컬럼만 리턴
 
 
-def process_bom_info(df):
+def process_bom_info(df: pd.DataFrame) -> pd.DataFrame:
     """[BOM] 자재 명세서 정보 추가"""
     mapping = {
         "자재번호(Root)": "root_product_id",
@@ -105,10 +108,11 @@ def process_bom_info(df):
     }
     df.rename(columns=mapping, inplace=True)
     df = _normalize_id_columns(df, ["root_product_id", "parent_product_id", "component_product_id", ])
-    return df[mapping.values()]
+    cols = [c for c in list(mapping.values()) if c in df.columns]
+    return df[cols]
 
 
-def process_vendor_info(df):
+def process_vendor_info(df: pd.DataFrame) -> pd.DataFrame:
     """[Vendor] 공급업체 정보 추가"""
     mapping = {
         "Fix": "is_fixed_vendor",
@@ -130,10 +134,11 @@ def process_vendor_info(df):
     }
     df.rename(columns=mapping, inplace=True)
     df = _normalize_id_columns(df, ["product_id", "vendor_id", "manufacturer_id", ])
-    return df[mapping.values()]  # 필요한 컬럼만 리턴
+    cols = [c for c in list(mapping.values()) if c in df.columns]
+    return df[cols]  # 필요한 컬럼만 리턴
 
 
-def process_overage_rule_info(df):
+def process_overage_rule_info(df: pd.DataFrame) -> pd.DataFrame:
     """[Overage] 자재별 오버리지 기준 매핑"""
     mapping = {
         "자재": "product_id",
@@ -147,11 +152,11 @@ def process_overage_rule_info(df):
     df.rename(columns=mapping, inplace=True)
 
     df = _normalize_id_columns(df, ["product_id"])
+    cols = [c for c in list(mapping.values()) if c in df.columns]
+    return df[cols]
 
-    return df[list(mapping.values())]
 
-
-def process_material_ledger_info(df):
+def process_material_ledger_info(df: pd.DataFrame) -> pd.DataFrame:
     """[Material_Ledger] 자재수불부 매핑"""
     mapping = {
         "자재": "product_id",
@@ -204,11 +209,11 @@ def process_material_ledger_info(df):
     df.rename(columns=mapping, inplace=True)
 
     df = _normalize_id_columns(df, ["product_id"])
+    cols = [c for c in list(mapping.values()) if c in df.columns]
+    return df[cols]
 
-    return df[mapping.values()]
 
-
-def process_purchase_transaction_history_info(df):
+def process_purchase_transaction_history_info(df: pd.DataFrame) -> pd.DataFrame:
     """[Purchase_Transaction_History] 구매/재무 상세 내역"""
     mapping = {
         "구매문서번호": "po_id",
@@ -238,11 +243,11 @@ def process_purchase_transaction_history_info(df):
 
     # ID 정규화
     df = _normalize_id_columns(df, ["po_id", "product_id", "vendor_id"])
+    cols = [c for c in list(mapping.values()) if c in df.columns]
+    return df[cols]
 
-    return df[list(mapping.values())]
 
-
-def process_good_receipt_info(df):
+def process_good_receipt_info(df: pd.DataFrame) -> pd.DataFrame:
     """[Good_Receipt] 입고 이력 정보(상세 내역) 추가"""
     mapping = {
         "작업일시": "work_datetime",
@@ -258,11 +263,11 @@ def process_good_receipt_info(df):
     }
     df.rename(columns=mapping, inplace=True)
     df = _normalize_id_columns(df, ["po_id", "product_id", "batch_no"])
+    cols = [c for c in list(mapping.values()) if c in df.columns]
+    return df[cols]
 
-    return df[mapping.values()]
 
-
-def process_purchase_order_info(df):
+def process_purchase_order_info(df: pd.DataFrame) -> pd.DataFrame:
     """[Purchase_Order] 구매 오더 정보 추가"""
     mapping = {
         "구매 문서": "po_id",
@@ -277,10 +282,11 @@ def process_purchase_order_info(df):
 
     df.rename(columns=mapping, inplace=True)
     df = _normalize_id_columns(df, ["product_id", "po_id", "vendor_id"])
-    return df[mapping.values()]
+    cols = [c for c in list(mapping.values()) if c in df.columns]
+    return df[cols]
 
 
-def process_batch_stock_info(df):
+def process_batch_stock_info(df: pd.DataFrame) -> pd.DataFrame:
     """[Batch_Stock] 유효 기한 정보 추가"""
     mapping = {
         "자재": "product_id",
@@ -298,10 +304,11 @@ def process_batch_stock_info(df):
     }
     df.rename(columns=mapping, inplace=True)
     df = _normalize_id_columns(df, ["product_id", "batch_no", ])
-    return df[mapping.values()]
+    cols = [c for c in list(mapping.values()) if c in df.columns]
+    return df[cols]
 
 
-def process_warehouse_stock_info(df):
+def process_warehouse_stock_info(df: pd.DataFrame) -> pd.DataFrame:
     """[Warehouse_Stock] 현재 스냅샷 정보 추가"""
     mapping = {
         "자재": "product_id",
@@ -320,9 +327,10 @@ def process_warehouse_stock_info(df):
     }
     df.rename(columns=mapping, inplace=True)
     df = _normalize_id_columns(df, ["product_id", "batch_no", ])
-    return df[mapping.values()]
+    cols = [c for c in list(mapping.values()) if c in df.columns]
+    return df[cols]
 
-def process_prod_plan_code_map_info(df):
+def process_prod_plan_code_map_info(df: pd.DataFrame) -> pd.DataFrame:
     """[prod_plan_code_map] 생산품목코드 정보 추가"""
     print(f"DEBUG: 엑셀 컬럼 목록 = {df.columns.tolist()}")
     mapping = {
@@ -335,9 +343,10 @@ def process_prod_plan_code_map_info(df):
     # ...
     df.rename(columns=mapping, inplace=True)
     df = _normalize_id_columns(df, ["product_id"])
-    return df[mapping.values()]
+    cols = [c for c in list(mapping.values()) if c in df.columns]
+    return df[cols]
 
-def process_production_plan(uploaded_file):
+def process_production_plan(uploaded_file) -> pd.DataFrame:
     """
     [Plan] 생산 계획 파싱 (OpenPyXL 사용)
     주의: 이 함수는 DataFrame이 아닌 '파일 객체'를 입력받습니다.
