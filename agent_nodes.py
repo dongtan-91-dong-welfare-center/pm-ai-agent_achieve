@@ -1,11 +1,13 @@
 import pandas as pd
 import numpy as np
 from langchain_core.messages import AIMessage, SystemMessage, HumanMessage, BaseMessage
+from datetime import datetime
 
 from agent_state import AgentState
 from agent_config import llm, chain_prompt_llm
 from data_loader import TABLE_SCHEMA
 from prompt import format_schema_for_prompt, CODE_GEN_SYSTEM_PROMPT
+from formatting import format_analysis_result, format_thinking_process, format_hil_prompt
 import tools
 
 
@@ -83,31 +85,51 @@ def reasoner(state: AgentState) -> dict:
                 # 폴백
                 final_response = AIMessage(content=str(response))
 
-        return {
-            "messages": [final_response],
-            # --- 상태 초기화 (Reset) ---
-            "execution_status": None,  # 실행 상태 리셋
-            "analysis_data": {},  # 이전 데이터 제거
-            "generated_code": None,  # 이전 코드 제거
-            "code_execution_result": None,  # 이전 로그 제거
-            "retry_count": 0  # 재시도 횟수 초기화
-        }
+            return {
+                "messages": [final_response],
+                # --- 상태 초기화 (Reset) ---
+                "execution_status": None,  # 실행 상태 리셋
+                "analysis_data": {},  # 이전 데이터 제거
+                "generated_code": None,  # 이전 코드 제거
+                "code_execution_result": None,  # 이전 로그 제거
+                "retry_count": 0,  # 재시도 횟수 초기화
+                "thinking_steps": [],  # CoT 초기화
+                "user_approval_pending": False,  # HIL 플래그 초기화
+                "user_approval_decision": None,
+                "user_feedback": None
+            }
+        except Exception as e:
+            print(f"❌ LLM invocation error: {str(e)}")
+            return {
+                "messages": [AIMessage(content=f"시스템 오류: {str(e)}")],
+                "execution_status": None,
+                "analysis_data": {},
+                "generated_code": None,
+                "code_execution_result": None,
+                "retry_count": 0
+            }
 
     # [핵심 로직 2] 코드 실행(Executor)이 '성공'하고 돌아온 경우
     if state.get("execution_status") == "success" and state.get("analysis_data"):
         # 결과 데이터 가져오기
         result_data = state["analysis_data"].get("last_run_result", "결과 없음")
 
-        # LLM에게 결과를 자연어로 요약 요청 (옵션)
-        # 여기서는 MVP용으로 간단히 결과 안내 메시지를 반환
-        # (필요하다면 여기서 LLM을 한 번 더 호출해서 `result_data`를 문장으로 만들 수 있음)
+        # ✨ 포맷팅된 결과 생성
+        formatted_result = format_analysis_result(result_data, "분석 결과")
+        
+        # CoT 표시 (사고 과정 시각화)
+        thinking_steps = state.get("thinking_steps", [])
+        thinking_output = ""
+        if thinking_steps:
+            thinking_output = format_thinking_process(thinking_steps)
+        
+        # 최종 메시지 구성
+        final_message = thinking_output + "\n\n" + formatted_result
 
         return {
-            "messages": [AIMessage(content=f"분석이 완료되었습니다. 결과: {result_data}")],
-            # 상태는 유지 (사용자가 "그걸 엑셀로 저장해줘"라고 할 수 있으므로 데이터는 남겨둠)
-            # 단, 무한 루프 방지를 위해 status를 'done' 등으로 바꾸거나,
-            # 다음 턴에서 HumanMessage가 오면 알아서 초기화되므로 놔둬도 됨.
-            "execution_status": "done"  # success 상태를 done으로 변경하여 루프 끊기
+            "messages": [AIMessage(content=final_message)],
+            "execution_status": "done",
+            "user_approval_pending": True  # HIL 승인 대기 플래그
         }
 
     # [핵심 로직 3] 에러가 발생하여 실패로 끝난 경우
@@ -191,15 +213,17 @@ def code_generator(state):
         }
 
 
-# Code Executor (Local Execution with Error Handling)
+# Code Executor (Local Execution with Error Handling & CoT)
 def code_executor(state):
     """
     생성된 코드를 안전한 환경(exec)에서 실행합니다.
     실패 시 execution_status='error'를 반환하여 재시도 로직 트리거.
+    CoT(Chain of Thought) 스텝을 추적합니다.
     """
     print("--- NODE: Code Executor ---")
     generated_code = state.get("generated_code", "")
     retry_count = state.get("retry_count", 0)
+    thinking_steps = state.get("thinking_steps", [])
 
     if not generated_code:
         return {
@@ -207,6 +231,14 @@ def code_executor(state):
             "code_execution_result": "생성된 코드가 비어 있습니다.",
             "retry_count": retry_count
         }
+
+    # CoT Step 1: 코드 준비
+    thinking_steps.append({
+        "step": len(thinking_steps) + 1,
+        "action": "실행 환경 준비",
+        "reason": "생성된 Python 코드를 안전한 샌드박스에서 실행하기 위함",
+        "result": "진행 중"
+    })
 
     # 실행 환경(Context) 준비
     global_context = {
@@ -222,35 +254,67 @@ def code_executor(state):
             global_context[f"df_{table_name}"] = df
 
     try:
+        # CoT Step 2: 코드 실행
+        thinking_steps.append({
+            "step": len(thinking_steps) + 1,
+            "action": "코드 실행",
+            "reason": "작성된 Python 코드를 실행하여 분석 결과 도출",
+            "result": "진행 중"
+        })
+
         local_context = {}
         exec(generated_code, global_context, local_context)
         
         execution_result = local_context.get("result", None)
 
         if execution_result is None:
+            thinking_steps.append({
+                "step": len(thinking_steps) + 1,
+                "action": "결과 검증",
+                "reason": "'result' 변수를 찾아 분석 결과 확인",
+                "result": "❌ 실패 - 'result' 변수 미정의"
+            })
+
             return {
                 "execution_status": "error",
                 "code_execution_result": "'result' 변수에 값이 할당되지 않았습니다. 코드에서 반드시 result = ... 형태로 결과를 할당하세요.",
-                "retry_count": retry_count + 1
+                "retry_count": retry_count + 1,
+                "thinking_steps": thinking_steps
             }
 
-        # ✅ 성공
+        # CoT Step 3: 성공
+        thinking_steps.append({
+            "step": len(thinking_steps) + 1,
+            "action": "결과 처리",
+            "reason": "분석 결과를 직렬화하여 상태에 저장",
+            "result": "✅ 성공"
+        })
+
         return {
             "analysis_data": {"last_run_result": serialize_result(execution_result)},
             "execution_status": "success",
             "code_execution_result": "성공",
-            "retry_count": 0
+            "retry_count": 0,
+            "thinking_steps": thinking_steps
         }
 
     except Exception as e:
-        # ❌ 실패 (에러 메시지와 함께 재시도 횟수 증가)
+        # CoT Step: 실패
         error_msg = str(e)
+        thinking_steps.append({
+            "step": len(thinking_steps) + 1,
+            "action": "코드 실행",
+            "reason": "작성된 코드 실행",
+            "result": f"❌ 실패 - {error_msg}"
+        })
+
         print(f"!!! Execution Error: {error_msg}")
 
         return {
             "execution_status": "error",
             "code_execution_result": error_msg,
-            "retry_count": retry_count + 1
+            "retry_count": retry_count + 1,
+            "thinking_steps": thinking_steps
         }
 
 # ============================================================================
@@ -336,7 +400,118 @@ def finalize_order(state: AgentState) -> dict:
     발주 최종 확정 처리 (DB 저장 등)
     """
     print("--- NODE: Finalize Order ---")
+
+    # 사용자 승인 확인
+    if state.get("execution_status") != "approved" and state.get("user_approval_decision") != "approve":
+        return {
+            "messages": [AIMessage(content="발주 확정 전 사용자 승인이 필요합니다.")],
+            "execution_status": None
+        }
+
+    # 분석 결과에서 발주 데이터 찾기
+    analyze_data = state.get("analysis_data", {}) or {}
+    last_result = analyze_data.get("last_run_result")
+    if not last_result:
+        return {
+            "messages": [AIMessage(content="저장할 발주 데이터가 없습니다.")],
+            "execution_status": "done"
+        }
+
+    # 가능한 많은 포맷(직렬화된 DataFrame / 리스트 / dict)을 처리
+    try:
+        po_rows = []
+        if isinstance(last_result, dict) and last_result.get("type") == "dataframe":
+            # pandas split orientation dictionary
+            df = pd.DataFrame(**last_result.get("data", {}))
+            po_rows = df.to_dict(orient='records')
+        elif isinstance(last_result, list):
+            po_rows = last_result
+        elif isinstance(last_result, dict):
+            po_rows = [last_result]
+        else:
+            # 문자열/기타 형식 -> 저장 불가
+            return {
+                "messages": [AIMessage(content="발주 데이터를 찾을 수 없습니다: 지원되지 않는 포맷입니다.")],
+                "execution_status": "done"
+            }
+
+        # 데이터 로더를 통해 파일에 append (도구 인터페이스 사용)
+        import json
+        from tools import submit_purchase_order_sync as submit_tool
+        res_msg = submit_tool(po_rows)
+        # submit_tool returns a localized message; translate to success/failure
+        success = not str(res_msg).startswith("저장 실패") and not str(res_msg).startswith("오류")
+
+        # reload shared DB
+        import data_loader
+        from tools import shared
+        shared.DB = data_loader.load_master_data()
+
+        if success:
+            return {
+                "messages": [AIMessage(content=f"✅ 발주가 시스템에 반영되었습니다. {res_msg}")],
+                "execution_status": "done"
+            }
+        else:
+            return {
+                "messages": [AIMessage(content=f"❌ 발주 저장 실패: {res_msg}")],
+                "execution_status": "error",
+                "code_execution_result": res_msg
+            }
+    except Exception as e:
+        return {
+            "messages": [AIMessage(content=f"발주 저장 중 예외 발생: {e}")],
+            "execution_status": "error",
+            "code_execution_result": str(e)
+        }
+
+
+# Human-in-the-Loop (HIL) 승인 노드
+def hil_approval(state: AgentState) -> dict:
+    """
+    사용자가 분석 결과 또는 발주 사항을 검토하고 승인/반려하는 노드
     
-    return {
-        "messages": [AIMessage(content="발주가 최종 승인되어 시스템에 반영되었습니다.")]
-    }
+    사용자의 입력:
+    - "승인" 또는 "1" -> 승인
+    - "반려" 또는 "2" -> 반려
+    - "수정" 또는 "3" -> 수정 (피드백 요청)
+    """
+    print("--- NODE: Human-in-the-Loop Approval ---")
+    
+    # 승인 대기 상태 확인
+    if not state.get("user_approval_pending"):
+        return {"user_approval_pending": False}
+    
+    # 사용자 결정 대기 (실제 구현에서는 Streamlit UI에서 입력받음)
+    approval_prompt = format_hil_prompt(
+        decision_point="분석 결과 검토 및 승인",
+        options=["승인", "반려", "수정/피드백 제공"],
+        context=f"분석 결과: {state.get('analysis_data', {})}"
+    )
+    
+    print(approval_prompt)
+    
+    # 예시: 자동 승인 (실제로는 사용자 입력 필요)
+    decision = state.get("user_approval_decision", "approve")
+    feedback = state.get("user_feedback", "")
+    
+    if decision == "approve":
+        return {
+            "messages": [AIMessage(content="✅ 결과를 승인하였습니다. 이제 발주를 진행합니다.")],
+            "user_approval_pending": False,
+            "execution_status": "approved"
+        }
+    elif decision == "reject":
+        return {
+            "messages": [AIMessage(content=f"❌ 결과를 반려하였습니다. 반려 사유: {feedback}")],
+            "user_approval_pending": False,
+            "execution_status": "rejected"
+        }
+    elif decision == "modify":
+        return {
+            "messages": [AIMessage(content=f"🔄 다음 수정사항을 반영하여 재분석하겠습니다: {feedback}")],
+            "user_approval_pending": False,
+            "execution_status": None  # 재분석 모드
+        }
+    
+    return {"user_approval_pending": False}

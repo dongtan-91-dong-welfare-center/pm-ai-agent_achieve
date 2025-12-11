@@ -24,6 +24,18 @@ class AgentState(TypedDict):
     # 재시도 횟수
     retry_count: int
 
+    # Chain of Thought - 단계별 생각 과정
+    thinking_steps: List[Dict[str, Any]]
+
+    # Human-in-the-Loop (HIL) 승인 대기 여부
+    user_approval_pending: Optional[bool]
+
+    # HIL 승인 결과 (approve, reject, modify)
+    user_approval_decision: Optional[str]
+
+    # 사용자 입력 (HIL에서 수정 사항이나 피드백)
+    user_feedback: Optional[str]
+
 
 # 2. Tool용 Pydantic 모델 정의 (라우팅용)
 
@@ -42,4 +54,17 @@ class FinalizeOrderRequest(BaseModel):
     """
     confirm_message: str = Field(
         description="발주 확정 메시지"
+    )
+
+
+class ApprovalDecision(BaseModel):
+    """
+    사용자의 승인/반려 결정 (HIL - Human in the Loop)
+    """
+    decision: str = Field(
+        description="승인 결정: 'approve' (승인), 'reject' (반려), 'modify' (수정)"
+    )
+    feedback: Optional[str] = Field(
+        default=None,
+        description="승인/반려 사유 또는 수정 요청사항"
     )
