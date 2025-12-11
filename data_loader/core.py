@@ -4,7 +4,6 @@ import pandas as pd
 from . import config as dl_conf
 from . import processors
 
-
 # 프로세서 매핑 (파일명: (Target Table, Func, Strategy, PK))
 FILE_PROCESSORS = {
     # 1. 마스터 데이터 (Master Data)
@@ -18,21 +17,42 @@ FILE_PROCESSORS = {
     # 2. 계획 및 오더 (Planning & Order)
     "생산 계획(production_plan)": ("production_plan", processors.process_production_plan, "REPLACE_ALL", None),
     "구매오더(purchase_order)": ("purchase_order", processors.process_purchase_order_info, "REPLACE_ALL", None),
-    "생산품목코드 매핑(prod_plan_code_map)": ("prod_plan_code_map", processors.process_prod_plan_code_map_info, "REPLACE_ALL", None),
+    "생산품목코드 매핑(prod_plan_code_map)": ("prod_plan_code_map", processors.process_prod_plan_code_map_info, "REPLACE_ALL",
+                                      None),
 
     # 3. 이력 데이터 (History) - [신규 추가됨]
-    "구매/재무 내역(purchase_transaction_history)": ("purchase_transaction_history", processors.process_purchase_transaction_history_info, "REPLACE_ALL", None),
+    "구매/재무 내역(purchase_transaction_history)": ("purchase_transaction_history",
+                                               processors.process_purchase_transaction_history_info, "REPLACE_ALL",
+                                               None),
     "입고이력(good_receipt)": ("good_receipt", processors.process_good_receipt_info, "REPLACE_ALL", None),
     "자재수불부(material_ledger)": ("material_ledger", processors.process_material_ledger_info, "REPLACE_ALL", None),
 
     # 4. 재고 데이터 (Stock)
-    "배치재고(batch_stock)": ("batch_stock", processors.process_batch_stock_info, "REPLACE_ALL", None), # 오타 수정됨
+    "배치재고(batch_stock)": ("batch_stock", processors.process_batch_stock_info, "REPLACE_ALL", None),
     "창고재고(warehouse_stock)": ("warehouse_stock", processors.process_warehouse_stock_info, "REPLACE_ALL", None),
 }
 
 
 def save_uploaded_file_by_type(uploaded_file: Union[pd.DataFrame, IO], source_type: str) -> tuple[bool, str]:
     """xlsx 데이터 통합 저장 로직 (Merge & Load)"""
+
+    # 여기에 정의된 컬럼들은 엑셀 로드 시 강제로 문자열(str)로 변환되어 '0' 잘림이나 실수 변환을 방지함
+    id_col_mapping = {
+        "자재 마스터(product)": ["자재"],
+        "착인 여부(product)": ["자재"],
+        "에디션(product)": ["자재"],
+        "공급업체/구매정보(vendor_info_record)": ["공급업체", "자재번호", "제조자"],
+        "오버리지 기준(overage_rule)": ["자재", "포장재코드"],
+        "생산 계획(production_plan)": [],  # openpyxl로 별도 처리하므로 제외
+        "구매오더(purchase_order)": ["구매 문서", "공급업체", "자재"],
+        "구매/재무 내역(purchase_transaction_history)": ["구매문서번호", "자재코드", "구매업체"],
+        "입고이력(good_receipt)": ["구매 문서 번호", "자재 번호", "배치번호"],
+        "자재수불부(material_ledger)": ["자재"],
+        "배치재고(batch_stock)": ["자재", "배치"],
+        "창고재고(warehouse_stock)": ["자재", "배치"],
+        "생산품목코드 매핑(prod_plan_code_map)": ["자재"]
+    }
+
     if source_type not in FILE_PROCESSORS:
         return False, f"지원하지 않는 파일 형식입니다."
 
@@ -49,12 +69,32 @@ def save_uploaded_file_by_type(uploaded_file: Union[pd.DataFrame, IO], source_ty
                 uploaded_file.seek(0)
             new_df = processor_func(uploaded_file)
         else:
+            # 1. 이미 DataFrame인 경우 (내부 로직 등)
             if isinstance(uploaded_file, pd.DataFrame):
                 raw_df = uploaded_file
+                # DataFrame인 경우 여기서도 ID 컬럼을 문자열로 확실히 변환해주는 것이 안전함
+                # (단, 이미 float로 망가져서 들어온 경우 복구 불가할 수 있음)
+
+            # 2. 파일 객체인 경우 (업로드된 엑셀)
             else:
                 if hasattr(uploaded_file, 'seek'):
                     uploaded_file.seek(0)
-                raw_df = pd.read_excel(uploaded_file)
+
+                # ID 컬럼 강제 문자열 지정 (데이터 변형 방지)
+                dtype_map = {}
+
+                # 현재 파일 타입에 해당하는 ID 컬럼 목록 가져오기
+                target_headers = id_col_mapping.get(source_type, [])
+
+                # 해당 헤더들을 모두 문자열로 강제 지정
+                for header in target_headers:
+                    dtype_map[header] = str
+
+                # dtype 옵션을 넣어 파일을 읽습니다.
+                # 이때 Pandas가 엑셀의 숫자를 멋대로 float로 바꾸지 않고 문자열("0002...")로 가져옵니다.
+                raw_df = pd.read_excel(uploaded_file, dtype=dtype_map)
+
+            # 전처리 함수 실행
             new_df = processor_func(raw_df)
 
         # 단순 교체 전략 (BOM 등 PK가 없는 경우)
@@ -79,7 +119,7 @@ def save_uploaded_file_by_type(uploaded_file: Union[pd.DataFrame, IO], source_ty
 
         # 기존 데이터가 존재하면, pk_col을 전처리
         if os.path.exists(file_path):
-            current_df = pd.read_csv(file_path)
+            current_df = pd.read_csv(file_path, dtype={pk_col: str})  # 읽을 때도 str로 읽기
             current_df[pk_col] = current_df[pk_col].astype(str).str.strip()
         else:
             current_df = pd.DataFrame()
@@ -134,12 +174,22 @@ def load_master_data():
         for table_name in dl_conf.TABLE_SCHEMA.keys():
             file_path = os.path.join(dl_conf.DATA_DIR, f"{table_name}.csv")
             if os.path.exists(file_path):
-                # 원본 데이터 그대로 로드 (Description 포함)
-                df = pd.read_csv(file_path)
-                # ID-like columns 정규화: 문자열로 변환 및 공백 제거
-                id_like_cols = [c for c in df.columns if c in ('product_id', 'vendor_id', 'po_id', 'batch_no', 'manufacturing_no') or c.endswith('_id')]
+                # ID 관련 컬럼은 무조건 str로 읽기 위한 dtype 맵 생성
+                # (CSV 로드 시에도 '0001' -> 1 로 변환되는 것을 방지)
+                temp_df = pd.read_csv(file_path, nrows=1)
+                id_like_cols = [c for c in temp_df.columns if
+                                c in ('product_id', 'vendor_id', 'po_id', 'batch_no', 'manufacturing_no') or c.endswith(
+                                    '_id')]
+                dtype_map = {col: str for col in id_like_cols}
+
+                # 원본 데이터 로드
+                df = pd.read_csv(file_path, dtype=dtype_map)
+
+                # 한번 더 확실하게 정규화 (공백 제거)
                 for col in id_like_cols:
-                    df[col] = df[col].astype(str).str.strip()
+                    if col in df.columns:
+                        df[col] = df[col].astype(str).str.strip()
+
                 db[table_name] = df
             else:
                 # 파일이 없으면 빈 DataFrame 생성
@@ -168,7 +218,7 @@ def append_purchase_order_row(row: dict) -> tuple[bool, str]:
 
         # Ensure ID normalization is performed by processor
         if os.path.exists(file_path):
-            current_df = pd.read_csv(file_path)
+            current_df = pd.read_csv(file_path, dtype={'po_id': str, 'product_id': str, 'vendor_id': str})
             # Re-normalize current pk columns
             for col in ['po_id', 'product_id', 'vendor_id']:
                 if col in current_df.columns:
@@ -199,7 +249,7 @@ def append_purchase_order_rows(rows: list) -> tuple[bool, str]:
         proc_df = process_purchase_order_info(raw_df)
         file_path = os.path.join(dl_conf.DATA_DIR, "purchase_order.csv")
         if os.path.exists(file_path):
-            current_df = pd.read_csv(file_path)
+            current_df = pd.read_csv(file_path, dtype={'po_id': str, 'product_id': str, 'vendor_id': str})
         else:
             current_df = pd.DataFrame(columns=proc_df.columns)
         final_df = pd.concat([current_df, proc_df], ignore_index=True, sort=False)

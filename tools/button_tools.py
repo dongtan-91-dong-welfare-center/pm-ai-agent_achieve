@@ -19,12 +19,22 @@ def run_monthly_closing_process() -> str:
     print(">>> [Debug] 월말 마감 리포트 프로세스 시작 (날짜 변환 적용)")
     print("=" * 60)
 
+    # 초기화 및 로그 버퍼
+    log_buffer = []
+
+    def log(message):
+        log_buffer.append(message)
+
+    log("### 🚀 월말 마감 프로세스 시작")
+
     # 1. 데이터 로드
     txn_df = DB.get('purchase_transaction_history', pd.DataFrame()).copy()
     prod_df = DB.get('product', pd.DataFrame()).copy()
 
     if txn_df.empty: return "데이터 오류: 구매 상세 내역이 비어있습니다."
     if prod_df.empty: return "데이터 오류: 자재 마스터 데이터가 비어있습니다."
+
+    log(f"- **대상 데이터**: 구매내역 {len(txn_df):,}건 / 자재마스터 {len(prod_df):,}건 로드 완료")
 
     # =========================================================================
     # [핵심 수정] 날짜 컬럼 타입 변환 (String -> Datetime)
@@ -107,6 +117,8 @@ def run_monthly_closing_process() -> str:
         curr_year, curr_month = today.year, today.month
 
     print(f">>> [Setting] 리포트 기준월: {curr_year}년 {curr_month}월")
+
+    log(f"\n### 📊 {curr_year}년 {curr_month}월 마감 요약")
 
     # 기준 날짜 계산
     if curr_month == 1:
@@ -260,9 +272,17 @@ def run_monthly_closing_process() -> str:
                 df_missing.to_excel(writer, sheet_name='Error_Log', index=False)
 
         msg = f"리포트 생성 완료: {file_path}"
+        log(f"\n---\n**✅ 리포트 파일 생성 완료**")
+        log(f"📂 저장 경로: `{file_path}`")
+
         if unclassified_curr > 0:
+            log(f"\n### ⚠️ 주의: 미분류 금액 발생")
+            log(f"- **금액**: {unclassified_curr:,.0f}원")
+            log(f"- **원인**: 자재 마스터에 `product_type`이 없거나 매칭되지 않은 자재가 존재합니다.")
+            log("- 엑셀 파일의 `Error_Log` 시트를 반드시 확인하여 자재 마스터를 보정해주세요.")
             msg += f"\n⚠️ [참고] 미분류 금액 {unclassified_curr:,.0f}원은 합계에서 제외되었습니다. Error_Log를 확인하세요."
-        return msg
+        # return msg
+        return "\n".join(log_buffer)
 
     except Exception as e:
         return f"리포트 저장 실패: {str(e)}"
