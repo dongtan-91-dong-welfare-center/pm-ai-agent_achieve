@@ -1,6 +1,8 @@
 import streamlit as st
+from tools import run_monthly_closing_process
 import pandas as pd
 from data_loader import load_master_data, save_uploaded_file_by_type, FILE_PROCESSORS
+from langchain_core.messages import AIMessage, HumanMessage
 
 PRIMARY_COLOR = "#d78632"  # Daewoong Orange
 
@@ -70,15 +72,45 @@ def render_sidebar():
 def render_quick_prompts():
     """빠른 실행 버튼 영역 렌더링"""
     st.markdown("###### 👋 자주 사용하는 질문")
-    col1, col2, col3 = st.columns(3)
 
-    clicked_prompt = None
+    # 1. 3개의 컬럼 생성
+    col1, col2, col3 = st.columns(3)
+    clicked_prompt = None  # 변수 초기화
+
+    # ---------------------------------------------------------
+    # 버튼 1: 월말 리포트 (Agent 호출)
+    # ---------------------------------------------------------
     if col1.button("📅 월말 구매 마감 리포트", use_container_width=True):
         clicked_prompt = "월말 리포트 보내줘"
+        # 로딩 표시 (Spinner)
+        with st.spinner("데이터 집계 및 월말 리포트 생성 중입니다..."):
+            try:
+                # tools/button_tools.py의 함수 실행
+                result_message = run_monthly_closing_process()
+
+                # 결과 메시지 출력 (성공/실패 여부에 따라 색상 구분)
+                if "실패" in result_message or "오류" in result_message or "없습니다" in result_message:
+                    st.error(result_message)
+                else:
+                    st.success(result_message)
+
+                    # (선택 사항) 채팅 기록에 결과를 남기고 싶다면 아래 코드 사용
+                    # st.session_state.messages.append({"role": "assistant", "content": result_message})
+
+            except Exception as e:
+                st.error(f"프로세스 실행 중 예기치 않은 오류가 발생했습니다: {str(e)}")
+
+    # ---------------------------------------------------------
+    # 버튼 2: 자재 소요량 (Agent 호출)
+    # ---------------------------------------------------------
     if col2.button("📊 월별 자재 소요량", use_container_width=True):
         clicked_prompt = "당월 자재별 소요량 보내줘"
+
+    # ---------------------------------------------------------
+    # 버튼 3: 발주 현황 파일 생성 (즉시 실행 - Agent Bypass)
+    # ---------------------------------------------------------
     if col3.button("📂 발주 현황 공유 파일", use_container_width=True):
-        clicked_prompt = "자재 발주 현황 공유용 파일 만들어줘"
+        clicked_prompt = "발주 현황 공유 파일 만들어줘"
 
     return clicked_prompt
 

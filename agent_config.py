@@ -4,7 +4,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from agent_state import PythonAnalysisRequest, FinalizeOrderRequest
-from tools import get_stock_status, generate_purchase_prediction, calculate_gross_requirement
+from tools import AGENT_TOOLS
 
 # 환경 변수 로드
 load_dotenv()
@@ -22,15 +22,8 @@ llm = ChatGoogleGenerativeAI(
     transport="rest",
 )
 
-# 실제 실행되는 도구 목록
-base_tools = [
-    get_stock_status,
-    generate_purchase_prediction,
-    calculate_gross_requirement,
-]
-
-# 라우팅용 도구 (Pydantic 모델) 추가
-all_tools = base_tools + [PythonAnalysisRequest, FinalizeOrderRequest]
+# # 실제 실행되는 도구 목록 + 라우팅용 도구 (Pydantic 모델) 추가
+all_tools = AGENT_TOOLS + [PythonAnalysisRequest, FinalizeOrderRequest]
 
 # LLM에 도구 바인딩
 llm_with_tools = llm.bind_tools(all_tools)

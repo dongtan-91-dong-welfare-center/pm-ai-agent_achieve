@@ -1,12 +1,13 @@
 import pandas as pd
 import numpy as np
-from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
+from langchain_core.messages import AIMessage, SystemMessage, HumanMessage, BaseMessage
 
 from agent_state import AgentState
 from agent_config import llm, chain_prompt_llm
 from data_loader import TABLE_SCHEMA
 from prompt import format_schema_for_prompt, CODE_GEN_SYSTEM_PROMPT
 import tools
+
 
 # 데이터 직렬화 헬퍼 함수
 def serialize_result(data):
@@ -63,8 +64,17 @@ def reasoner(state: AgentState) -> dict:
         # (이전 대화 맥락은 messages 리스트에 남아있으므로 LLM이 기억함)
         response = chain_prompt_llm.invoke({"messages": messages})
 
+        # 타입 강제 변환 (String -> AIMessage)
+        # LLM이 문자열을 반환하더라도 AIMessage로 감싸서 리스트 연산 오류 방지
+        final_response = response
+        if isinstance(response, str):
+            final_response = AIMessage(content=response)
+        elif not isinstance(response, BaseMessage):
+            # 만약 dict나 다른 타입이라면 강제로 문자열 변환 후 포장
+            final_response = AIMessage(content=str(response))
+
         return {
-            "messages": [response],
+            "messages": [final_response],
             # --- 상태 초기화 (Reset) ---
             "execution_status": None,  # 실행 상태 리셋
             "analysis_data": {},  # 이전 데이터 제거
