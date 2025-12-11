@@ -1,11 +1,12 @@
 import streamlit as st
-from tools import run_monthly_closing_process
 import pandas as pd
+import re
 from data_loader import load_master_data, save_uploaded_file_by_type, FILE_PROCESSORS
-from langchain_core.messages import AIMessage, HumanMessage
+
+# [중요] 비즈니스 로직은 tools/button_tools.py에서 가져옵니다.
+from tools import button_tools
 
 PRIMARY_COLOR = "#d78632"  # Daewoong Orange
-
 
 def setup_page_config():
     """페이지 기본 설정 및 CSS 스타일 적용"""
@@ -34,7 +35,6 @@ def setup_page_config():
         """,
         unsafe_allow_html=True
     )
-
 
 def render_sidebar():
     """사이드바: 파일 업로드 및 데이터 탐색기"""
@@ -68,7 +68,6 @@ def render_sidebar():
         except Exception:
             st.warning("데이터 로드 실패")
 
-
 def render_quick_prompts():
     """빠른 실행 버튼 영역 렌더링"""
     st.markdown("###### 👋 자주 사용하는 질문")
@@ -85,18 +84,18 @@ def render_quick_prompts():
         # 로딩 표시 (Spinner)
         with st.spinner("데이터 집계 및 월말 리포트 생성 중입니다..."):
             try:
-                # tools/button_tools.py의 함수 실행
-                result_message = run_monthly_closing_process()
+                # 1. 로직 실행 (파일 생성)
+                result_message = button_tools.run_monthly_closing_process()
 
                 # 결과 메시지 출력 (성공/실패 여부에 따라 색상 구분)
                 if "실패" in result_message or "오류" in result_message or "없습니다" in result_message:
                     st.error(result_message)
                 else:
                     st.success(result_message)
-
-                    # (선택 사항) 채팅 기록에 결과를 남기고 싶다면 아래 코드 사용
-                    # st.session_state.messages.append({"role": "assistant", "content": result_message})
-
+                    # 3. [중요] 파일 경로를 세션에 저장 (화면에 그리지는 않음)
+                    match = re.search(r"리포트 생성 완료:\s*(.*?.xlsx)", result_message)
+                    if match:
+                        st.session_state['monthly_report_path'] = match.group(1).strip()
             except Exception as e:
                 st.error(f"프로세스 실행 중 예기치 않은 오류가 발생했습니다: {str(e)}")
 
@@ -110,10 +109,26 @@ def render_quick_prompts():
     # 버튼 3: 발주 현황 파일 생성 (즉시 실행 - Agent Bypass)
     # ---------------------------------------------------------
     if col3.button("📂 발주 현황 공유 파일", use_container_width=True):
-        clicked_prompt = "발주 현황 공유 파일 만들어줘"
+        with st.spinner("최근 2년 데이터를 조회하여 시트 분할 중입니다..."):
+            try:
+                # 1. 로직 실행
+                result_msg = button_tools.run_po_status_report()
+
+                # 2. 결과 표시
+                if "파일 생성 완료" in result_msg:
+                    st.success(result_msg)
+                    # 3. [중요] 파일 경로 세션 저장
+                    match = re.search(r'파일 생성 완료:\s*(.*?.xlsx)', result_msg)
+                    if match:
+                        st.session_state['po_status_path'] = match.group(1).strip()
+                elif "알림" in result_msg:
+                    st.warning(result_msg)
+                else:
+                    st.error(result_msg)
+            except Exception as e:
+                st.error(f"오류 발생: {e}")
 
     return clicked_prompt
-
 
 def render_analysis_result(result_data):
     """분석 결과(DataFrame, Scalar 등) 시각화"""

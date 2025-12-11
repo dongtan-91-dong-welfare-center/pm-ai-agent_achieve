@@ -1,9 +1,13 @@
 import streamlit as st
+import os  # [추가] 파일 경로 처리를 위해 필수
 from langchain_core.messages import HumanMessage, AIMessage
 
 import ui_components as ui
 from agent_graph import create_graph
 
+# --------------------------------------------------------------------------
+# 1. 초기 설정 및 리소스 로드
+# --------------------------------------------------------------------------
 # 페이지 설정 (가장 먼저 실행)
 ui.setup_page_config()
 
@@ -21,13 +25,16 @@ ui.render_sidebar()
 # 메인 타이틀 및 초기 상태 설정
 st.title("생산 관리 AI Agent")
 
-# 사용자 입력 처리 (텍스트 입력 or 버튼 클릭)
+# --------------------------------------------------------------------------
+# 2. 사용자 입력 및 채팅 히스토리 표시
+# --------------------------------------------------------------------------
+# 상단 버튼 렌더링 (여기서는 로직 실행 및 경로 저장만 수행)
 quick_prompt = ui.render_quick_prompts()
 
 if "messages" not in st.session_state:
     st.session_state["messages"] = []
 
-# 대화 기록 표시
+# 대화 기록 표시 (이 부분이 실행되어야 채팅창이 그려짐)
 for msg in st.session_state.messages:
     if isinstance(msg, HumanMessage):
         with st.chat_message("user"):
@@ -39,12 +46,15 @@ for msg in st.session_state.messages:
             if "artifact" in msg.additional_kwargs:
                 ui.render_analysis_result(msg.additional_kwargs["artifact"])
 
+# 채팅 입력창
 chat_input = st.chat_input("질문을 입력하세요.")
-
 user_input = chat_input if chat_input else quick_prompt
 
+# --------------------------------------------------------------------------
+# 3. Agent 실행 로직 (사용자 입력이 있을 경우)
+# --------------------------------------------------------------------------
 if user_input:
-    # ]사용자 메시지 저장 및 표시
+    # 사용자 메시지 저장 및 표시
     st.session_state["messages"].append(HumanMessage(content=user_input))
     with st.chat_message("user"):
         st.write(user_input)
@@ -70,7 +80,6 @@ if user_input:
 
                 # event는 {'node_name': state_update} 형태
                 for node_name, state_update in event.items():
-
                     # 사고 과정 시각화
                     if node_name == "reasoner":
                         status_container.write(" **[분석]** 사용자 의도를 파악하고 계획을 수립했습니다.")
@@ -80,7 +89,6 @@ if user_input:
                         status_container.write(" **[설계]** 데이터 분석용 Python 코드를 생성했습니다.")
                         with status_container.expander("생성된 코드 보기"):
                             st.code(state_update.get("python_code", ""), language="python")
-
                     elif node_name == "code_executor":
                         status = state_update.get("generation_status")
                         if status == "SUCCESS":
@@ -116,3 +124,44 @@ if user_input:
         except Exception as e:
             status_container.update(label="오류 발생", state="error")
             st.error(f"시스템 오류: {e}")
+
+# --------------------------------------------------------------------------
+# 4. [New] 결과 파일 다운로드 영역
+# --------------------------------------------------------------------------
+# 이 코드가 맨 마지막에 있으므로, 채팅창(Agent 실행 결과 포함) 아래에 버튼이 생성됩니다.
+
+# A. 월말 구매 마감 리포트 다운로드
+if "monthly_report_path" in st.session_state:
+    file_path = st.session_state["monthly_report_path"]
+
+    # 파일이 실제로 존재할 때만 버튼 표시
+    if os.path.exists(file_path):
+        st.divider()  # 시각적 구분선
+        with open(file_path, "rb") as f:
+            st.download_button(
+                label="📥 월말 구매 마감 리포트 다운로드",
+                data=f,
+                file_name=os.path.basename(file_path),
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_main_monthly",
+                use_container_width=True
+            )
+
+# B. 발주 현황 공유 파일 다운로드
+if "po_status_path" in st.session_state:
+    file_path = st.session_state["po_status_path"]
+
+    if os.path.exists(file_path):
+        # 월말 리포트 버튼이 없을 때만 구분선 추가 (중복 방지)
+        if "monthly_report_path" not in st.session_state:
+            st.divider()
+
+        with open(file_path, "rb") as f:
+            st.download_button(
+                label="📥 발주 현황 공유 파일 다운로드",
+                data=f,
+                file_name=os.path.basename(file_path),
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_main_po",
+                use_container_width=True
+            )

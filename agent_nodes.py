@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 from langchain_core.messages import AIMessage, SystemMessage, HumanMessage, BaseMessage
-from datetime import datetime
 
 from agent_state import AgentState
 from agent_config import llm, chain_prompt_llm
@@ -437,10 +436,10 @@ def finalize_order(state: AgentState) -> dict:
 
         # 데이터 로더를 통해 파일에 append (도구 인터페이스 사용)
         import json
-        from tools import submit_purchase_order_sync as submit_tool
-        res_msg = submit_tool(po_rows)
+        # from tools import submit_purchase_order_sync as submit_tool
+        # res_msg = submit_tool(po_rows)
         # submit_tool returns a localized message; translate to success/failure
-        success = not str(res_msg).startswith("저장 실패") and not str(res_msg).startswith("오류")
+        # success = not str(res_msg).startswith("저장 실패") and not str(res_msg).startswith("오류")
 
         # reload shared DB
         import data_loader
