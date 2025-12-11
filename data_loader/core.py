@@ -1,6 +1,7 @@
 import os
+from typing import Union, IO
 import pandas as pd
-from .config import DATA_DIR, TABLE_SCHEMA
+from . import config as dl_conf
 from . import processors
 
 
@@ -30,7 +31,7 @@ FILE_PROCESSORS = {
 }
 
 
-def save_uploaded_file_by_type(uploaded_file, source_type):
+def save_uploaded_file_by_type(uploaded_file: Union[pd.DataFrame, IO], source_type: str) -> tuple[bool, str]:
     """xlsx 데이터 통합 저장 로직 (Merge & Load)"""
     if source_type not in FILE_PROCESSORS:
         return False, f"지원하지 않는 파일 형식입니다."
@@ -38,23 +39,29 @@ def save_uploaded_file_by_type(uploaded_file, source_type):
     # 설정값 가져오기
     target_table, processor_func, strategy, pk_col = FILE_PROCESSORS[source_type]
     # 기존 데이터를 불러오기 위한 경로 설정
-    file_path = os.path.join(DATA_DIR, f"{target_table}.csv")
+    file_path = os.path.join(dl_conf.DATA_DIR, f"{target_table}.csv")
 
     try:
         # 엑셀 파일 로드 및 전처리
         if target_table == "production_plan":
-            uploaded_file.seek(0)
-            new_df = processor_func(uploaded_file)  # openpyxl은 파일 객체를 직접 필요로 함
+            # production plan processors expect a file-like uploaded_file (openpyxl workbook)
+            if hasattr(uploaded_file, 'seek'):
+                uploaded_file.seek(0)
+            new_df = processor_func(uploaded_file)
         else:
-            uploaded_file.seek(0)
-            raw_df = pd.read_excel(uploaded_file)
+            if isinstance(uploaded_file, pd.DataFrame):
+                raw_df = uploaded_file
+            else:
+                if hasattr(uploaded_file, 'seek'):
+                    uploaded_file.seek(0)
+                raw_df = pd.read_excel(uploaded_file)
             new_df = processor_func(raw_df)
 
         # 단순 교체 전략 (BOM 등 PK가 없는 경우)
         if strategy == "REPLACE_ALL":
             # 병합 로직 없이 바로 저장 (덮어쓰기)
-            if not os.path.exists(DATA_DIR):
-                os.makedirs(DATA_DIR)
+            if not os.path.exists(dl_conf.DATA_DIR):
+                os.makedirs(dl_conf.DATA_DIR)
             new_df.to_csv(file_path, index=False)
             return True, f"[{source_type}] 저장 완료. {len(new_df)}건)"
 
@@ -63,7 +70,12 @@ def save_uploaded_file_by_type(uploaded_file, source_type):
             return False, "설정 오류: 해당 전략은 식별자(PK)가 필요합니다."
 
         # 새로운 데이터에 대해 숫자로 들어오든 문자로 들어오든 무조건 str로 맞추고 공백을 날립니다.
-        new_df.loc[:, pk_col] = new_df[pk_col].astype(str).str.strip()
+        if pk_col not in new_df.columns:
+            return False, f"업로드된 파일에 PK 컬럼({pk_col})이 없습니다."
+        try:
+            new_df.loc[:, pk_col] = new_df[pk_col].astype(str).str.strip()
+        except Exception as e:
+            return False, f"PK 컬럼 처리 중 오류: {e}"
 
         # 기존 데이터가 존재하면, pk_col을 전처리
         if os.path.exists(file_path):
@@ -104,8 +116,8 @@ def save_uploaded_file_by_type(uploaded_file, source_type):
             final_df.reset_index(inplace=True)
 
         # 저장
-        if not os.path.exists(DATA_DIR):
-            os.makedirs(DATA_DIR)
+        if not os.path.exists(dl_conf.DATA_DIR):
+            os.makedirs(dl_conf.DATA_DIR)
         final_df.to_csv(file_path, index=False)
 
         return True, f"[{source_type}] 처리 완료. (전략: {strategy}, 총 {len(final_df)}건)"
@@ -119,14 +131,19 @@ def load_master_data():
     db = {}
     try:
         # TABLE_SCHEMA에 정의된 테이블들을 순회하며 로드
-        for table_name in TABLE_SCHEMA.keys():
-            file_path = os.path.join(DATA_DIR, f"{table_name}.csv")
+        for table_name in dl_conf.TABLE_SCHEMA.keys():
+            file_path = os.path.join(dl_conf.DATA_DIR, f"{table_name}.csv")
             if os.path.exists(file_path):
                 # 원본 데이터 그대로 로드 (Description 포함)
-                db[table_name] = pd.read_csv(file_path)
+                df = pd.read_csv(file_path)
+                # ID-like columns 정규화: 문자열로 변환 및 공백 제거
+                id_like_cols = [c for c in df.columns if c in ('product_id', 'vendor_id', 'po_id', 'batch_no', 'manufacturing_no') or c.endswith('_id')]
+                for col in id_like_cols:
+                    df[col] = df[col].astype(str).str.strip()
+                db[table_name] = df
             else:
                 # 파일이 없으면 빈 DataFrame 생성
-                db[table_name] = pd.DataFrame(columns=TABLE_SCHEMA.get(table_name, []))
+                db[table_name] = pd.DataFrame(columns=dl_conf.TABLE_SCHEMA.get(table_name, []))
         return db
     except Exception as e:
         print(f"데이터 로드 중 오류: {e}")
