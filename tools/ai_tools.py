@@ -269,3 +269,141 @@ def generate_excel_report(data_json: str, filename: str = "report.xlsx") -> str:
         return f"파일이 생성되었습니다: {file_path}"
     except Exception as e:
         return f"파일 생성 실패: {str(e)}"
+
+
+@tool
+def generate_monthly_purchase_closing_report(year: int, month: int) -> str:
+    """
+    [월말 구매 마감 리포트] 특정 월의 구매 마감 현황을 조회합니다.
+    완료된 발주, 진행 중인 발주, 예정된 발주를 분류하여 반환합니다.
+    """
+    try:
+        from monthly_reports import generate_monthly_closing_report
+        report = generate_monthly_closing_report(DB, year, month)
+
+        result_text = f"## {year}년 {month}월 구매 마감 리포트\n\n"
+        result_text += f"**조회 기간**: {report['query_period']}\n\n"
+        result_text += f"### 📊 통계\n"
+        for key, value in report['statistics'].items():
+            result_text += f"- {key}: {value}\n"
+
+        result_text += f"\n### ✅ 완료된 발주 ({len(report['completed'])}건)\n"
+        if not report['completed'].empty:
+            result_text += report['completed'].to_markdown(index=False)
+        else:
+            result_text += "없음\n"
+
+        result_text += f"\n### ⏳ 진행 중인 발주 ({len(report['in_progress'])}건)\n"
+        if not report['in_progress'].empty:
+            result_text += report['in_progress'].to_markdown(index=False)
+        else:
+            result_text += "없음\n"
+
+        return result_text
+    except Exception as e:
+        return f"오류: {str(e)}"
+
+
+@tool
+def calculate_monthly_material_requirement(year: int, month: int) -> str:
+    """
+    [월별 자재 소요량 계산] 해당 월의 생산 계획을 기반으로 필요한 자재 소요량을 계산합니다.
+    BOM을 전개하여 자재별 소요량과 부족 경고를 반환합니다.
+    """
+    try:
+        from monthly_reports import calculate_material_requirement
+        result = calculate_material_requirement(DB, year, month)
+
+        result_text = f"## {result['period']} 자재 소요량 계산\n\n"
+        result_text += f"### 📊 통계\n"
+        for key, value in result['statistics'].items():
+            result_text += f"- {key}: {value}\n"
+
+        result_text += f"\n### 📋 자재별 소요량\n"
+        if isinstance(result['total_requirement'], pd.DataFrame) and not result['total_requirement'].empty:
+            result_text += result['total_requirement'].to_markdown(index=False)
+        else:
+            result_text += "데이터 없음\n"
+
+        if result['shortage_items']:
+            result_text += f"\n### ⚠️ 부족 자재 경고\n"
+            for shortage in result['shortage_items']:
+                result_text += f"- **{shortage['product_id']}**: 필요 {shortage['required_qty']}, 현재재고 {shortage['current_stock']}, 부족량 {shortage['shortage_qty']}\n"
+
+        return result_text
+    except Exception as e:
+        return f"오류: {str(e)}"
+
+
+@tool
+def get_purchase_order_status(vendor_id: str = None, product_id: str = None) -> str:
+    """
+    [발주 현황 조회] 공급업체 또는 자재별 발주 상태를 조회합니다.
+    미처리 발주, 완료율 등을 포함한 상세 현황을 반환합니다.
+    """
+    try:
+        from monthly_reports import get_purchase_status
+        status = get_purchase_status(DB, vendor_id, product_id)
+
+        result_text = f"## 발주 현황 조회\n\n"
+        if vendor_id:
+            result_text += f"**공급업체**: {vendor_id}\n"
+        if product_id:
+            result_text += f"**자재**: {product_id}\n"
+
+        result_text += f"\n### 📊 통계\n"
+        for key, value in status['statistics'].items():
+            result_text += f"- {key}: {value}\n"
+
+        result_text += f"\n### 📋 공급업체별 현황\n"
+        if isinstance(status['by_vendor'], pd.DataFrame) and not status['by_vendor'].empty:
+            result_text += status['by_vendor'].to_markdown()
+        else:
+            result_text += "데이터 없음\n"
+
+        result_text += f"\n### 🔴 미처리 발주 ({len(status['pending'])}건)\n"
+        if not status['pending'].empty:
+            result_text += status['pending'].to_markdown(index=False)
+        else:
+            result_text += "모두 처리됨\n"
+
+        return result_text
+    except Exception as e:
+        return f"오류: {str(e)}"
+
+
+@tool
+def submit_purchase_order(data_json: str) -> str:
+    """
+    [발주 제출] AI가 생성한 발주 항목을 시스템에 저장합니다.
+    입력은 JSON 문자열(또는 리스트)이며, 각 항목은 purchase_order 테이블의 컬럼명을 따라야 합니다.
+    """
+    try:
+        import json
+        from data_loader import core as dl_core
+        from data_loader import config as dl_conf
+
+        # Parse JSON
+        rows = json.loads(data_json) if isinstance(data_json, str) else data_json
+        if not isinstance(rows, list):
+            rows = [rows]
+
+        success, msg = dl_core.append_purchase_order_rows(rows)
+        return msg if success else f"저장 실패: {msg}"
+    except Exception as e:
+        return f"발주 저장 중 예외 발생: {e}"
+
+
+def submit_purchase_order_sync(rows: list | dict) -> str:
+    """
+    Synchronous API to store purchase orders. Rows can be a list or a single dict.
+    Intended for direct Python invocation (tests, scripts) where StructuredTool is not invokable.
+    """
+    try:
+        from data_loader import core as dl_core
+        if isinstance(rows, dict):
+            rows = [rows]
+        success, msg = dl_core.append_purchase_order_rows(rows)
+        return msg if success else f"저장 실패: {msg}"
+    except Exception as e:
+        return f"발주 저장 중 예외 발생: {e}"
