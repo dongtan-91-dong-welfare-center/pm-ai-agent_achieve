@@ -29,8 +29,16 @@ def get_merged_date(ws, cell, date_row, current_col, year, month):
         return None, None
 
 
-def _normalize_id_columns(df, cols):
-    """[Helper] ID 컬럼의 공백 제거 및 앞자리 0 제거 (정규화)"""
+def _normalize_id_columns(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
+    """[Helper] ID 컬럼의 공백 제거 및 앞자리 0 제거 (정규화).
+
+    Args:
+        df: 입력 데이터프레임
+        cols: 정규화할 컬럼 리스트
+
+    Returns:
+        정규화된 데이터프레임
+    """
     for col in cols:
         if col in df.columns:
             # 1. 문자열 변환 -> 2. 공백 제거 -> 3. 앞자리 '0' 제거
