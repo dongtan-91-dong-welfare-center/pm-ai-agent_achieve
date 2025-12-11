@@ -14,6 +14,8 @@ from .ai_tools import (
     calculate_gross_requirement,
     generate_purchase_prediction,
     generate_excel_report
+    , generate_monthly_purchase_closing_report, calculate_monthly_material_requirement, get_purchase_order_status
+    , submit_purchase_order
 )
 
 # 3. UI(Streamlit)에서 버튼으로 실행할 함수들 (button_tools.py)
@@ -31,5 +33,9 @@ AGENT_TOOLS = [
     calculate_gross_requirement,
     generate_purchase_prediction,
     generate_excel_report,
+    generate_monthly_purchase_closing_report,
+    calculate_monthly_material_requirement,
+    get_purchase_order_status,
+    submit_purchase_order,
     run_monthly_closing_process
 ]
