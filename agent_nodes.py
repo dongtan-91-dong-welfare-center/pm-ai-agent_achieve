@@ -60,18 +60,28 @@ def reasoner(state: AgentState) -> dict:
     if isinstance(last_message, HumanMessage):
         print(">>> New Interaction Detected: Resetting State...")
 
-        # 라우팅을 위한 LLM 호출
-        # (이전 대화 맥락은 messages 리스트에 남아있으므로 LLM이 기억함)
-        response = chain_prompt_llm.invoke({"messages": messages})
+        try:
+            # 라우팅을 위한 LLM 호출
+            # (이전 대화 맥락은 messages 리스트에 남아있으므로 LLM이 기억함)
+            response = chain_prompt_llm.invoke({"messages": messages})
 
-        # 타입 강제 변환 (String -> AIMessage)
-        # LLM이 문자열을 반환하더라도 AIMessage로 감싸서 리스트 연산 오류 방지
-        final_response = response
-        if isinstance(response, str):
-            final_response = AIMessage(content=response)
-        elif not isinstance(response, BaseMessage):
-            # 만약 dict나 다른 타입이라면 강제로 문자열 변환 후 포장
-            final_response = AIMessage(content=str(response))
+            # 타입 강제 변환 (String -> AIMessage)
+            # LLM이 문자열을 반환하더라도 AIMessage로 감싸서 리스트 연산 오류 방지
+            final_response = response
+            if isinstance(response, str):
+                final_response = AIMessage(content=response)
+            elif hasattr(response, "content") and hasattr(response, "type"):
+                # BaseMessage 계열 (AIMessage, ToolMessage 등)
+                final_response = response
+            elif isinstance(response, dict):
+                # dict 타입이면 문자열로 변환
+                final_response = AIMessage(content=str(response))
+            elif hasattr(response, "__dict__"):
+                # 다른 객체들은 문자열화
+                final_response = AIMessage(content=str(response))
+            else:
+                # 폴백
+                final_response = AIMessage(content=str(response))
 
         return {
             "messages": [final_response],
