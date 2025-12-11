@@ -133,6 +133,67 @@ def load_master_data():
         return {}
 
 
+def append_purchase_order_row(row: dict) -> tuple[bool, str]:
+    """
+    Append a single purchase order row to the `purchase_order.csv` file.
+
+    Args:
+        row: Mapping object with keys matching the processed purchase_order columns.
+    Returns:
+        (success(bool), message(str))
+    """
+    file_path = os.path.join(dl_conf.DATA_DIR, "purchase_order.csv")
+    try:
+        # Normalize/validate incoming row via existing processors
+        raw_df = pd.DataFrame([row])
+        from .processors import process_purchase_order_info
+        proc_df = process_purchase_order_info(raw_df)
+
+        # Ensure ID normalization is performed by processor
+        if os.path.exists(file_path):
+            current_df = pd.read_csv(file_path)
+            # Re-normalize current pk columns
+            for col in ['po_id', 'product_id', 'vendor_id']:
+                if col in current_df.columns:
+                    current_df[col] = current_df[col].astype(str).str.strip()
+        else:
+            current_df = pd.DataFrame(columns=proc_df.columns)
+
+        # Append new rows
+        final_df = pd.concat([current_df, proc_df], ignore_index=True, sort=False)
+
+        # Persist
+        if not os.path.exists(dl_conf.DATA_DIR):
+            os.makedirs(dl_conf.DATA_DIR)
+        final_df.to_csv(file_path, index=False)
+        return True, f"구매오더가 정상적으로 저장되었습니다. (총 {len(final_df)}건)"
+    except Exception as e:
+        return False, f"오류 발생: {str(e)}"
+
+
+def append_purchase_order_rows(rows: list) -> tuple[bool, str]:
+    """
+    Append multiple purchase order rows to existing purchase_order table.
+    Uses process_purchase_order_info to normalize input rows.
+    """
+    try:
+        raw_df = pd.DataFrame(rows)
+        from .processors import process_purchase_order_info
+        proc_df = process_purchase_order_info(raw_df)
+        file_path = os.path.join(dl_conf.DATA_DIR, "purchase_order.csv")
+        if os.path.exists(file_path):
+            current_df = pd.read_csv(file_path)
+        else:
+            current_df = pd.DataFrame(columns=proc_df.columns)
+        final_df = pd.concat([current_df, proc_df], ignore_index=True, sort=False)
+        if not os.path.exists(dl_conf.DATA_DIR):
+            os.makedirs(dl_conf.DATA_DIR)
+        final_df.to_csv(file_path, index=False)
+        return True, f"구매오더가 정상적으로 저장되었습니다. (총 {len(final_df)}건)"
+    except Exception as e:
+        return False, f"오류 발생: {str(e)}"
+
+
 def get_database_schema_string(meta_file_path="data/Datas.csv"):
     """
     실제 데이터(Row)는 절대 조회하지 않음.
