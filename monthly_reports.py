@@ -66,7 +66,9 @@ class MonthlyReportGenerator:
                 (po_df["po_date"] >= target_date_start) & 
                 (po_df["po_date"] <= target_date_end)
             ]
-        except:
+        except (KeyError, ValueError, TypeError) as e:
+            # 로그 출력용: 구체적 에러 메시지
+            print(f"PO 필터링 중 오류 발생: {e}")
             po_filtered = pd.DataFrame()
         
         # 상태별 분류
@@ -130,7 +132,8 @@ class MonthlyReportGenerator:
                 ]
             else:
                 plan_filtered = prod_plan
-        except:
+        except (KeyError, ValueError, TypeError) as e:
+            print(f"Plan 필터링 중 오류 발생: {e}")
             plan_filtered = pd.DataFrame()
         
         # BOM 전개 (단순 집계)
