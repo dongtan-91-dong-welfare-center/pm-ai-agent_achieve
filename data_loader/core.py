@@ -26,6 +26,7 @@ FILE_PROCESSORS = {
                                                None),
     "입고이력(good_receipt)": ("good_receipt", processors.process_good_receipt_info, "REPLACE_ALL", None),
     "자재수불부(material_ledger)": ("material_ledger", processors.process_material_ledger_info, "REPLACE_ALL", None),
+    "부적합 이력 (non_conformance)": ("non_conformance",processors.process_non_conformance_info,"UPSERT_ROWS","batch_no"),
 
     # 4. 재고 데이터 (Stock)
     "배치재고(batch_stock)": ("batch_stock", processors.process_batch_stock_info, "REPLACE_ALL", None),

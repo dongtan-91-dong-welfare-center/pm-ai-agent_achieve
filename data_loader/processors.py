@@ -337,14 +337,75 @@ def process_prod_plan_code_map_info(df: pd.DataFrame) -> pd.DataFrame:
         "자재": "product_id",
         "자재 내역": "description",
         "국가": "country",
-        "유닛": "packing_unit"
+        "유닛": "packing_unit",}
+
+
+def process_non_conformance_info(df: pd.DataFrame) -> pd.DataFrame:
+    """[Non_Conformance] 부적합 정보 추가"""
+
+    # [핵심 해결책] 엑셀 헤더의 앞뒤 공백을 강제로 제거합니다.
+    # 예: "문서 헤더 텍스트 " -> "문서 헤더 텍스트"
+    df.columns = df.columns.str.strip()
+
+    # 디버깅: 공백 제거 후 컬럼명 확인
+    print(f">>> [DEBUG] 공백 제거 후 컬럼: {df.columns.tolist()}")
+
+    mapping = {
+        "자재": "product_id",
+        "자재 내역": "description",
+        "Plnt": "plant_code",
+        "저장 위치": "storage_location",
+        "이동 유형 텍스트": "movement_type_text",
+        "이동 유형": "movement_type",
+        "특별 재고": "special_stock",
+        "자재 문서": "material_document",
+        "자재 문서 항목": "material_document_item",
+        "전기일": "posting_date",
+        "증빙일": "document_date",
+        "배치": "batch_no",
+        "수량(입력 단위)": "entry_quantity",  # 주의: 엑셀 헤더가 ' 수량(입력 단위)'였다면 strip 후에는 '수량(입력 단위)'가 됨
+        "입력단위": "entry_unit",
+        "입력일": "entry_date",
+        "입력 시간": "entry_time",
+        "사용자 이름": "user_name",
+        "오더": "order_id",
+        "구매 오더": "purchase_order",
+        "판매 오더": "sales_order",
+        "판매 오더 품목": "sales_order_item",
+        "문서 헤더 텍스트": "header_text",
+        "이동지시자": "movement_indicator",
+        "자재 수령인": "goods_recipient",
+        "금액(현지 통화)": "amount_local_currency"
     }
 
-    # ...
+    # 1. 컬럼명 변경
     df.rename(columns=mapping, inplace=True)
-    df = _normalize_id_columns(df, ["product_id"])
+
+    # -------------------------------------------------------------------------
+    # [필터링 로직] header_text 값이 있는 행 제거
+    # -------------------------------------------------------------------------
+    if "header_text" in df.columns:
+        print(">>> [DEBUG] 'header_text' 컬럼 매핑 성공! 필터링 수행.")
+
+        # 1) 결측치(NaN), "nan" 문자열 등을 모두 빈 문자열("")로 통일
+        df["header_text"] = df["header_text"].fillna("").astype(str).str.strip()
+        df.loc[df["header_text"].str.lower() == "nan", "header_text"] = ""
+
+        # 2) header_text가 빈 문자열인 행만 남김 (내용이 있으면 제거)
+        #    즉, 비고란이 깨끗한 데이터만 가져옴
+        df = df[df["header_text"] == ""]
+
+    else:
+        print(">>> [DEBUG] ⚠️ 여전히 'header_text' 컬럼이 없습니다. 매핑 키를 다시 확인하세요.")
+    # -------------------------------------------------------------------------
+
+    # 2. ID 정규화
+    df = _normalize_id_columns(df, ["product_id", "batch_no"])
+
+    # 3. 유효 컬럼만 선택하여 반환
     cols = [c for c in list(mapping.values()) if c in df.columns]
     return df[cols]
+
 
 def process_production_plan(uploaded_file) -> pd.DataFrame:
     """
