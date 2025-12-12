@@ -30,7 +30,10 @@ def format_dataframe_to_markdown(df: pd.DataFrame, max_rows: int = 20) -> str:
     
     # 마크다운 테이블로 변환
     markdown = f"📊 **데이터 조회 결과** (총 {len(df)}건, 표시: {len(display_df)}건)\n\n"
-    markdown += display_df.to_markdown(index=False)
+    try:
+        markdown += display_df.to_markdown(index=False)
+    except Exception:
+        markdown += display_df.to_string(index=False)
     
     if len(df) > max_rows:
         markdown += f"\n\n⚠️ 결과가 많아 처음 {max_rows}건만 표시됩니다."
