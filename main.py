@@ -125,6 +125,33 @@ if user_input:
             status_container.update(label="오류 발생", state="error")
             st.error(f"시스템 오류: {e}")
 
+    # HIL 승인 대기 여부 UI 처리
+    # 그래프 실행 중에 'user_approval_pending'가 발생할 수 있으므로, 사용자가 승인/반려 버튼을 누르면 그래프를 재실행하여 이어감
+    hil_options = ["승인", "반려", "수정/피드백"]
+    if 'messages' in st.session_state and st.session_state['messages']:
+        # 마지막 대화가 AI 메시지인지 확인
+        last_msg = st.session_state['messages'][-1]
+        # 여기서는 간단 조건으로 UI 표시: 마지막 AIMessage의 컨텐츠에 '승인' 프롬프트가 있는 경우
+        if isinstance(last_msg, AIMessage) and '승인' in last_msg.content:
+            with st.expander("결과를 검토하고 승인하세요"):
+                choice = st.radio("결정", hil_options, index=0, key='hil_choice')
+                if st.button("결정 적용", key='hil_apply'):
+                    # Append user decision as human message and resume the graph
+                    st.session_state['messages'].append(HumanMessage(content=choice))
+                    app = get_graph()
+                    config = {"configurable": {"thread_id": "thread-1"}}
+                    try:
+                        for event in app.stream({"messages": st.session_state['messages']}, config=config):
+                            for node_name, state_update in event.items():
+                                if 'messages' in state_update and state_update['messages']:
+                                    last_msg = state_update['messages'][-1]
+                                    if isinstance(last_msg, AIMessage) and last_msg.content:
+                                        with st.chat_message("assistant"):
+                                            st.write(last_msg.content)
+                                            st.session_state['messages'].append(last_msg)
+                    except Exception as e:
+                        st.error(f"승인 재실행 중 오류가 발생했습니다: {e}")
+
 # --------------------------------------------------------------------------
 # 4. [New] 결과 파일 다운로드 영역
 # --------------------------------------------------------------------------
