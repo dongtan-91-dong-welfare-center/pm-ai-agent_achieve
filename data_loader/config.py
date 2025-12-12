@@ -211,5 +211,32 @@ TABLE_SCHEMA = {
         "country",
         "packing_unit",
     ],
-
+# 12. 부적합 이력 (non_conformance)-추가됨
+    "non_conformance": [
+    "material_id",
+    "material_description",
+    "plant_code",
+    "storage_location",
+    "movement_type_text",
+    "movement_type",
+    "special_stock",
+    "material_document",
+    "material_document_item",
+    "posting_date",
+    "document_date",
+    "batch_no",
+    "entry_quantity",
+    "entry_unit",
+    "entry_date",
+    "entry_time",
+    "user_name",
+    "order_id",
+    "purchase_order",
+    "sales_order",
+    "sales_order_item",
+    "header_text",
+    "movement_indicator",
+    "goods_recipient",
+    "amount_local_currency"
+]
 }

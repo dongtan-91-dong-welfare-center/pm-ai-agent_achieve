@@ -1,5 +1,5 @@
 import streamlit as st
-import os  # [추가] 파일 경로 처리를 위해 필수
+import os  # [필수] 파일 경로 처리를 위해 추가
 from langchain_core.messages import HumanMessage, AIMessage
 
 import ui_components as ui
@@ -73,7 +73,7 @@ if user_input:
 
         try:
             # LangGraph 스트리밍 실행
-            # inputs에 messages 리스트 전체를 전달
+            # inputs에 messages 리스트 전체를 전달 (기존 로직 유지)
             inputs = {"messages": st.session_state["messages"]}
 
             for event in app.stream(inputs, config=config):
@@ -190,5 +190,24 @@ if "po_status_path" in st.session_state:
                 file_name=os.path.basename(file_path),
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="dl_main_po",
+                use_container_width=True
+            )
+
+# C. [추가됨] 공급업체 평가 양식 다운로드
+if "supplier_eval_path" in st.session_state:
+    file_path = st.session_state["supplier_eval_path"]
+
+    if os.path.exists(file_path):
+        # 다른 리포트들이 하나도 없을 때만 구분선 추가 (깔끔한 UI 유지)
+        if "monthly_report_path" not in st.session_state and "po_status_path" not in st.session_state:
+            st.divider()
+
+        with open(file_path, "rb") as f:
+            st.download_button(
+                label="📥 공급업체 평가 양식 다운로드",
+                data=f,
+                file_name=os.path.basename(file_path),
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_btn_supplier_eval",
                 use_container_width=True
             )
