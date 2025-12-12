@@ -13,9 +13,12 @@ from .ai_tools import (
     analyze_long_term_stock,
     calculate_gross_requirement,
     generate_purchase_prediction,
-    generate_excel_report
-    , generate_monthly_purchase_closing_report, calculate_monthly_material_requirement, get_purchase_order_status
-    , submit_purchase_order
+    generate_excel_report,
+    generate_monthly_purchase_closing_report,
+    calculate_monthly_material_requirement,
+    get_purchase_order_status,
+    submit_purchase_order,
+    submit_purchase_order_sync,
 )
 
 # 3. UI(Streamlit)에서 버튼으로 실행할 함수들 (button_tools.py)
