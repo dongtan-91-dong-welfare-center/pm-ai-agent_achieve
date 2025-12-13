@@ -5,9 +5,11 @@
 - Fallback Strategy: 엑셀 생성 라이브러리(openpyxl) 오류 시 CSV로 자동 전환하여 데이터 손실을 막습니다.
 """
 
+from datetime import datetime
 import os
 import json
 import pandas as pd
+import numpy as np
 from langchain_core.tools import tool
 from .shared import DB, OUTPUT_DIR
 
@@ -25,6 +27,22 @@ def _normalize_id(x):
         s = s[:-2]
     return s.lstrip('0')
 
+# =============================================================================
+# [공통 유틸리티] ID 정규화 함수
+# =============================================================================
+def normalize_id(x):
+    """
+    ID 값을 문자열로 변환하고 정규화합니다.
+    - None/NaN -> None
+    - 실수형 문자열(.0) 제거
+    - 앞뒤 공백 제거
+    """
+    if pd.isna(x): return None
+    s = str(x).strip()
+    if s.lower() == 'nan': return None
+    if s.endswith('.0'): s = s[:-2]
+    if not s: return None
+    return s.lstrip('0') # 0 제거 로직 포함
 
 def _safe_save_excel(df: pd.DataFrame, file_path: str) -> str:
     """[내부용] 엑셀 저장 시도 후 실패 시 CSV로 저장하는 안전한 저장 함수"""
@@ -286,3 +304,245 @@ def generate_supplier_evaluation_report() -> str:
 
     except Exception as e:
         return f"오류 발생: {str(e)}"
+
+@tool
+def generate_monthly_purchase_closing_report(year: int = 0, month: int = 0) -> str:
+    """
+    [월말 구매 마감 리포트 생성]
+    구매 상세 내역을 분석하여 Summary, Top Items, Error Log가 포함된 엑셀 리포트를 생성합니다.
+    Args:
+        year (int): 대상 연도 (0이면 자동 계산)
+        month (int): 대상 월 (0이면 자동 계산)
+    """
+    # 여기에 button_tools.py의 run_monthly_closing_process 내부 로직을 그대로 복사해 넣습니다.
+    # 단, 함수 인자(year, month)를 활용하도록 약간의 수정이 필요합니다.
+    # ...
+    print("\n" + "=" * 60)
+    print(">>> [Process] 월말 마감 리포트 (Full Sheets) 생성 시작")
+    print("=" * 60)
+
+    try:
+        # 1. 데이터 로드
+        txn_df = DB.get('purchase_transaction_history', pd.DataFrame()).copy()
+        prod_df = DB.get('product', pd.DataFrame()).copy()
+
+        if txn_df.empty: return "데이터 오류: 구매 상세 내역이 비어있습니다."
+        if prod_df.empty: return "데이터 오류: 자재 마스터 데이터가 비어있습니다."
+
+        # 2. 날짜 및 이동유형 전처리
+        if 'receipt_date' in txn_df.columns:
+            txn_df['receipt_date'] = pd.to_datetime(txn_df['receipt_date'], errors='coerce')
+
+        if 'movement_type' in txn_df.columns:
+            txn_df['movement_type'] = txn_df['movement_type'].apply(
+                lambda x: str(x).strip().replace('.0', '') if pd.notnull(x) else None)
+            target_types = ['101', '102']
+            txn_df = txn_df[txn_df['movement_type'].isin(target_types)].copy()
+            if txn_df.empty: return "데이터 오류: 이동유형 101/102 데이터가 없습니다."
+
+        # 3. ID 정규화
+        txn_df['product_id'] = txn_df['product_id'].apply(normalize_id)
+        prod_df['product_id'] = prod_df['product_id'].apply(normalize_id)
+
+        # 4. 데이터 병합 (Merge)
+        # txn_df의 모든 행을 유지하기 위해 product_id가 없어도 일단 진행 (나중에 Error_Log로 분류)
+        prod_unique = prod_df.drop_duplicates(subset=['product_id'], keep='first')
+        merged_df = txn_df.merge(prod_unique[['product_id', 'product_type', 'description']], on='product_id', how='left')
+
+        # 5. 금액 계산
+        target_col = 'total_received_value_krw'
+        if target_col in merged_df.columns:
+            merged_df[target_col] = pd.to_numeric(merged_df[target_col], errors='coerce').fillna(0)
+            if 'movement_type' in merged_df.columns:
+                mask_cancel = merged_df['movement_type'] == '102'
+                merged_df.loc[mask_cancel, target_col] = -np.abs(merged_df.loc[mask_cancel, target_col])
+        else:
+            merged_df[target_col] = 0
+
+        # 6. 자재 유형 정제
+        merged_df['product_type'] = merged_df['product_type'].astype(str).str.strip().str.upper()
+        merged_df.loc[merged_df['product_type'].isin(['NAN', 'NONE', '']), 'product_type'] = 'UNCLASSIFIED'
+
+        # 7. 기준 연월 설정
+        valid_dates = merged_df['receipt_date'].dropna()
+        if not valid_dates.empty:
+            max_date = valid_dates.max()
+            curr_year, curr_month = max_date.year, max_date.month
+        else:
+            now = datetime.now()
+            curr_year, curr_month = now.year, now.month
+
+        # ---------------------------------------------------------------------
+        # Sheet 1: Summary (요약)
+        # ---------------------------------------------------------------------
+
+        # 참조 기간 계산
+        if curr_month == 1:
+            prev_month_date = datetime(curr_year - 1, 12, 1)
+            ref1_y, ref1_m = curr_year - 1, 6; ref2_y, ref2_m = curr_year - 1, 9
+        else:
+            prev_month_date = datetime(curr_year, curr_month - 1, 1)
+            if 1 < curr_month <= 3: ref1_y, ref1_m = curr_year - 1, 9; ref2_y, ref2_m = curr_year - 1, 12
+            elif 3 < curr_month <= 6: ref1_y, ref1_m = curr_year - 1, 12; ref2_y, ref2_m = curr_year, 3
+            elif 6 < curr_month <= 9: ref1_y, ref1_m = curr_year, 3; ref2_y, ref2_m = curr_year, 6
+            else: ref1_y, ref1_m = curr_year, 6; ref2_y, ref2_m = curr_year, 9
+
+        prev_month_y, prev_month_m = prev_month_date.year, prev_month_date.month
+
+        # 집계 함수
+        def calculate_sum(target_year, target_month, p_type, currency_condition):
+            cond = (merged_df['product_type'] == p_type)
+            if target_month != 0:
+                cond &= (merged_df['receipt_date'].dt.year == target_year) & (merged_df['receipt_date'].dt.month == target_month)
+            else:
+                cond &= (merged_df['receipt_date'].dt.year == target_year)
+
+            if 'order_currency' in merged_df.columns:
+                curr_series = merged_df['order_currency'].fillna('').astype(str).str.strip().str.upper()
+                if currency_condition == 'KRW': cond &= (curr_series == 'KRW')
+                elif currency_condition == 'NON-KRW': cond &= (curr_series != 'KRW')
+            return float(merged_df.loc[cond, target_col].sum())
+
+        # KPI 산출
+        roh1_krw_curr = calculate_sum(curr_year, curr_month, 'ROH1', 'KRW')
+        roh1_krw_prev = calculate_sum(prev_month_y, prev_month_m, 'ROH1', 'KRW')
+        roh1_krw_last = calculate_sum(curr_year - 1, 0, 'ROH1', 'KRW')
+        roh1_krw_ref1 = calculate_sum(ref1_y, ref1_m, 'ROH1', 'KRW')
+        roh1_krw_ref2 = calculate_sum(ref2_y, ref2_m, 'ROH1', 'KRW')
+
+        roh1_for_curr = calculate_sum(curr_year, curr_month, 'ROH1', 'NON-KRW')
+        roh1_for_prev = calculate_sum(prev_month_y, prev_month_m, 'ROH1', 'NON-KRW')
+        roh1_for_last = calculate_sum(curr_year - 1, 0, 'ROH1', 'NON-KRW')
+        roh1_for_ref1 = calculate_sum(ref1_y, ref1_m, 'ROH1', 'NON-KRW')
+        roh1_for_ref2 = calculate_sum(ref2_y, ref2_m, 'ROH1', 'NON-KRW')
+
+        roh2_krw_curr = calculate_sum(curr_year, curr_month, 'ROH2', 'KRW')
+        roh2_krw_prev = calculate_sum(prev_month_y, prev_month_m, 'ROH2', 'KRW')
+        roh2_krw_last = calculate_sum(curr_year - 1, 0, 'ROH2', 'KRW')
+        roh2_krw_ref1 = calculate_sum(ref1_y, ref1_m, 'ROH2', 'KRW')
+        roh2_krw_ref2 = calculate_sum(ref2_y, ref2_m, 'ROH2', 'KRW')
+
+        # 분기(Quarter) 계산 헬퍼
+        def get_quarter_str(year, month):
+            q = (month - 1) // 3 + 1
+            return f"{year} {q}Q"
+
+        col_ref1 = get_quarter_str(ref1_y, ref1_m)
+        col_ref2 = get_quarter_str(ref2_y, ref2_m)
+
+        # Summary DataFrame 구성
+        summary_rows = [
+            {"구분": "내자 원료", "작년 총합": roh1_krw_last, col_ref1: roh1_krw_ref1, col_ref2: roh1_krw_ref2, "전월 실적": roh1_krw_prev, "당월 실적": roh1_krw_curr, "전월 대비 증감": roh1_krw_curr - roh1_krw_prev},
+            {"구분": "외자 원료", "작년 총합": roh1_for_last, col_ref1: roh1_for_ref1, col_ref2: roh1_for_ref2, "전월 실적": roh1_for_prev, "당월 실적": roh1_for_curr, "전월 대비 증감": roh1_for_curr - roh1_for_prev},
+            {"구분": "내자 자재", "작년 총합": roh2_krw_last, col_ref1: roh2_krw_ref1, col_ref2: roh2_krw_ref2, "전월 실적": roh2_krw_prev, "당월 실적": roh2_krw_curr, "전월 대비 증감": roh2_krw_curr - roh2_krw_prev},
+        ]
+
+        # 합계 계산
+        def sum_rows(title, *rows):
+            result = {"구분": title}
+            keys = [k for k in rows[0].keys() if k != "구분"]
+            for k in keys: result[k] = sum(row[k] for row in rows)
+            return result
+
+        summary_rows.append(sum_rows("원료 합계 (내자+외자)", summary_rows[0], summary_rows[1]))
+        summary_rows.append(sum_rows("내자 합계 (원료+자재)", summary_rows[0], summary_rows[2]))
+        summary_rows.append(sum_rows("전체 합계 (Total)", summary_rows[0], summary_rows[1], summary_rows[2]))
+
+        df_summary = pd.DataFrame(summary_rows)
+
+        # ---------------------------------------------------------------------
+        # Sheet 2: Top_Items (주요 지출 품목) - [복구됨]
+        # ---------------------------------------------------------------------
+
+        # 당월 데이터 필터링
+        current_month_df = merged_df[
+            (merged_df['receipt_date'].dt.year == curr_year) &
+            (merged_df['receipt_date'].dt.month == curr_month)
+        ].copy()
+
+        top_items_list = []
+        if not current_month_df.empty:
+            # 품목별 그룹화 (PO ID 집계 포함)
+            if 'po_id' not in current_month_df.columns: current_month_df['po_id'] = '-'
+
+            grouped = current_month_df.groupby(['product_id', 'product_type']).agg({
+                target_col: 'sum',
+                'description': 'first',
+                'po_id': lambda x: ', '.join(sorted(x.dropna().astype(str).unique()))[:100] # PO 목록 요약
+            }).reset_index()
+
+            # ROH1 (원료) Top 1
+            roh1_top = grouped[grouped['product_type'] == 'ROH1'].nlargest(1, target_col)
+            if not roh1_top.empty:
+                row = roh1_top.iloc[0].to_dict()
+                row['구분'] = '원료 최다 지출'
+                top_items_list.append(row)
+
+            # ROH2 (자재) Top 3
+            roh2_top = grouped[grouped['product_type'] == 'ROH2'].nlargest(3, target_col)
+            if not roh2_top.empty:
+                rank = 1
+                for _, row in roh2_top.iterrows():
+                    r_dict = row.to_dict()
+                    r_dict['구분'] = f'자재 Top {rank}'
+                    top_items_list.append(r_dict)
+                    rank += 1
+
+            df_top_items = pd.DataFrame(top_items_list)
+            # 컬럼 순서 정리
+            if not df_top_items.empty:
+                target_cols = ['구분', 'product_id', 'description', target_col, 'po_id']
+                existing_cols = [c for c in target_cols if c in df_top_items.columns]
+                df_top_items = df_top_items[existing_cols]
+
+                # 한글명으로 변경
+                rename_map = {
+                    'product_id': '자재 코드',
+                    'description': '자재명',
+                    target_col: '금액',
+                    'po_id': '관련 PO'
+                }
+                df_top_items = df_top_items.rename(columns=rename_map)
+
+        else:
+            df_top_items = pd.DataFrame(columns=['구분', '메시지']) # 데이터 없음
+
+        # ---------------------------------------------------------------------
+        # Sheet 3: Detail_Data (상세 내역)
+        # ---------------------------------------------------------------------
+        df_detail = current_month_df.copy()
+
+        # ---------------------------------------------------------------------
+        # Sheet 4: Error_Log (오류 로그) - [복구됨]
+        # ---------------------------------------------------------------------
+        # 오류 조건:
+        # 1. Product Type이 UNCLASSIFIED (마스터 매핑 실패 또는 유형 정보 없음)
+        # 2. Description이 NaN (마스터에 없는 자재)
+
+        error_mask = (merged_df['product_type'] == 'UNCLASSIFIED') | (merged_df['description'].isna())
+        df_error = merged_df[error_mask].copy()
+
+        # ---------------------------------------------------------------------
+        # 엑셀 저장
+        # ---------------------------------------------------------------------
+        filename = f"Monthly_Closing_Report_{curr_year}_{curr_month:02d}.xlsx"
+        file_path = os.path.join(OUTPUT_DIR, filename)
+
+        with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+            df_summary.to_excel(writer, sheet_name="Summary", index=False)
+
+            if not df_top_items.empty:
+                df_top_items.to_excel(writer, sheet_name="Top_Items", index=False)
+
+            df_detail.to_excel(writer, sheet_name="Detail_Data", index=False)
+
+            if not df_error.empty:
+                df_error.to_excel(writer, sheet_name="Error_Log", index=False)
+            else:
+                # 에러가 없어도 시트는 생성하되 메시지 남김 (현업 확인용)
+                pd.DataFrame({'Status': ['No Errors Found']}).to_excel(writer, sheet_name="Error_Log", index=False)
+
+        return f"리포트 생성 완료: {file_path}"
+
+    except Exception as e:
+        return f"월말 마감 리포트 생성 실패: {str(e)}"

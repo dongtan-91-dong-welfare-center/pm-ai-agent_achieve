@@ -119,24 +119,7 @@ def render_quick_prompts():
     # 의도: 리포트 생성은 복잡하므로 Agent의 프로세스를 타되, 프롬프트 입력을 자동화함.
     # =========================================================================
     if col1.button("📅 월말 구매 마감 리포트", use_container_width=True):
-        # 1. 로직 우선 실행 (파일 생성)
-        with st.spinner("데이터 집계 및 월말 리포트 생성 중입니다..."):
-            try:
-                result_message = button_tools.run_monthly_closing_process()
-
-                if "실패" in result_message or "오류" in result_message:
-                    st.error(result_message)
-                else:
-                    st.success(result_message)
-                    # 정규표현식으로 파일 경로 추출 -> 다운로드 버튼 활성화용 세션 저장
-                    match = re.search(r"리포트 생성 완료:\s*(.*?.xlsx)", result_message)
-                    if match:
-                        st.session_state['monthly_report_path'] = match.group(1).strip()
-
-                # 2. Agent에게도 알림 (선택 사항: 여기서는 채팅창에 기록을 남기기 위해 메시지 리턴)
-                clicked_prompt = "월말 구매 마감 리포트 생성 결과 알려줘"
-            except Exception as e:
-                st.error(f"오류 발생: {str(e)}")
+        clicked_prompt = "이번 달 구매 마감 결과를 알려주고, 리포트를 생성해줘."
 
     # =========================================================================
     # [Type 2] Direct Execution: 공급업체 평가 (Agent Bypass)
