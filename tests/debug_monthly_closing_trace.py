@@ -1,142 +1,117 @@
-import pandas as pd
-import numpy as np
 import sys
 import os
+import pandas as pd
+import numpy as np
 
-# 프로젝트 루트 경로 추가 (모듈 import를 위해)
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 프로젝트 루트 경로 설정
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
 
-from data_loader import load_master_data
-
-# ==============================================================================
-# 🛠️ 설정: 추적하고 싶은 자재 ID와 기준 년월을 입력하세요.
-# ==============================================================================
-TARGET_PRODUCT_IDS = ["2001530", ]  # 여기에 의심스러운 자재 코드를 문자열로 입력 (여러 개 가능)
-TARGET_YEAR = 2025
-TARGET_MONTH = 12
+from tools.shared import DB
 
 
-# ==============================================================================
-
-def trace_monthly_closing_logic():
-    print(f"\n🔍 [Debug] 자재 {TARGET_PRODUCT_IDS}에 대한 월말 마감 로직 추적 시작")
-    print(f"📅 기준: {TARGET_YEAR}년 {TARGET_MONTH}월\n")
+def debug_foreign_material_aggregation():
+    print("\n" + "=" * 80)
+    print("🕵️‍♂️ 외자 원료(ROH1 + Non-KRW) 집계 누락 원인 분석")
+    print("=" * 80)
 
     # 1. 데이터 로드
-    DB = load_master_data()
     txn_df = DB.get('purchase_transaction_history', pd.DataFrame()).copy()
     prod_df = DB.get('product', pd.DataFrame()).copy()
 
-    # --- [Step 1] 원본 데이터 확인 ---
-    # 로드 직후 데이터에서 해당 자재가 존재하는지 확인 (ID 정규화 전)
-    # 엑셀의 원본 ID 형태를 모르므로, 포함된 문자열로 대략 검색
-    print(f"--- [Step 1] 원본 데이터(Transaction) 검색 ---")
-    for pid in TARGET_PRODUCT_IDS:
-        # 문자열로 변환하여 부분 일치 검색
-        mask = txn_df['product_id'].astype(str).str.contains(pid, na=False)
-        found = txn_df[mask]
-        print(f" > ID '{pid}' 포함된 원본 행 개수: {len(found)}건")
-        if not found.empty:
-            print(found[['product_id', 'receipt_date', 'movement_type', 'received_value_local_currency']].head(
-                3).to_markdown(index=False))
-            print("...")
-
-    # 2. 전처리 로직 (button_tools.py와 동일하게 적용)
-
-    # 2-1. 날짜 변환
-    if 'receipt_date' in txn_df.columns:
-        txn_df['receipt_date'] = pd.to_datetime(txn_df[date_col_name],
-                                                errors='coerce') if 'receipt_date' in locals() else pd.to_datetime(
-            txn_df['receipt_date'], errors='coerce')
-
-    # 2-2. 이동유형 필터링 (101, 102만 남김)
-    if 'movement_type' in txn_df.columns:
-        txn_df['movement_type'] = txn_df['movement_type'].apply(
-            lambda x: str(x).strip().replace('.0', '') if pd.notnull(x) else None
-        )
-
-    # --- [Step 2] 이동유형 필터링 후 확인 ---
-    print(f"\n--- [Step 2] 이동유형(101, 102) 필터링 확인 ---")
-    target_types = ['101', '102']
-
-    # 추적 대상 자재들의 이동유형 분포 확인
-    # 정규화 전이라 아직 ID 매칭이 정확하지 않을 수 있어, 대략적인 흐름만 봅니다.
-
-    # 2-3. ID 정규화 (핵심)
-    def normalize_id_strict(x):
-        if pd.isna(x): return None
-        s = str(x).strip()
-        if s.lower() == 'nan': return None
-        if s.endswith('.0'): s = s[:-2]
-        s = s.lstrip('0')  # 앞자리 0 제거
-        if not s: return None
-        return s
-
-    txn_df['product_id_norm'] = txn_df['product_id'].apply(normalize_id_strict)
-    prod_df['product_id_norm'] = prod_df['product_id'].apply(normalize_id_strict)
-
-    # 정규화된 ID로 타겟 필터링
-    target_txn = txn_df[txn_df['product_id_norm'].isin(TARGET_PRODUCT_IDS)].copy()
-
-    print(f"\n--- [Step 3] ID 정규화 후 타겟 자재 데이터 ({len(target_txn)}건) ---")
-    if target_txn.empty:
-        print("❌ [Critical] 정규화 후 해당 ID를 가진 데이터가 없습니다!")
-        print(f"   (원본 ID가 {TARGET_PRODUCT_IDS}와 다르게 변환되었는지 확인 필요)")
+    if txn_df.empty:
+        print("❌ 구매 이력 데이터가 없습니다.")
         return
 
-    print(target_txn[['product_id', 'product_id_norm', 'movement_type', 'receipt_date',
-                      'received_value_local_currency']].to_markdown(index=False))
+    print(f"1. 전체 트랜잭션 수: {len(txn_df):,}건")
 
-    # 2-4. 금액 변환 (102번 마이너스 처리)
-    target_col = 'received_value_local_currency'
-    target_txn[target_col] = pd.to_numeric(target_txn[target_col], errors='coerce').fillna(0)
+    # 2. 필터링 (이동유형 101, 102)
+    # 정규화: .0 제거 및 공백 제거
+    txn_df['movement_type'] = txn_df['movement_type'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+    target_txn = txn_df[txn_df['movement_type'].isin(['101', '102'])].copy()
+    print(f"2. 이동유형(101/102) 필터링 후: {len(target_txn):,}건")
 
-    # 취소(102) 반영 로직
-    mask_cancel = target_txn['movement_type'] == '102'
-    target_txn.loc[mask_cancel, target_col] = -np.abs(target_txn.loc[mask_cancel, target_col])
+    # 3. ID 정규화 및 매칭 준비
+    def normalize_id(x):
+        if pd.isna(x): return None
+        s = str(x).strip().lstrip('0')
+        return s if s else None
 
-    print(f"\n--- [Step 4] 금액 변환 및 반품(102) 처리 결과 ---")
-    print(target_txn[['movement_type', 'received_value_local_currency']].head().to_markdown(index=False))
+    target_txn['product_id_norm'] = target_txn['product_id'].apply(normalize_id)
+    prod_df['product_id_norm'] = prod_df['product_id'].apply(normalize_id)
 
-    # 2-5. 자재 마스터 병합 (유형 확인)
+    # 4. 데이터 병합 (Left Join)
     merged_df = target_txn.merge(
-        prod_df[['product_id_norm', 'product_type', 'description']],
-        left_on='product_id_norm', right_on='product_id_norm',
-        how='left', indicator=True
+        prod_df[['product_id_norm', 'product_type', 'description']].drop_duplicates(subset=['product_id_norm']),
+        on='product_id_norm',
+        how='left'
     )
 
-    print(f"\n--- [Step 5] 자재 마스터 매칭 결과 ---")
-    print(merged_df[['product_id_norm', 'product_type', 'description', '_merge']].head().to_markdown(index=False))
+    # 5. 통화 및 자재 유형 정제
+    merged_df['order_currency'] = merged_df['order_currency'].fillna('').astype(str).str.strip().str.upper()
+    merged_df['product_type'] = merged_df['product_type'].fillna('UNCLASSIFIED').astype(str).str.strip().str.upper()
+    merged_df.loc[merged_df['product_type'] == '', 'product_type'] = 'UNCLASSIFIED'
 
-    if (merged_df['_merge'] == 'left_only').any():
-        print("⚠️ [Warning] 일부 데이터가 자재 마스터와 매칭되지 않았습니다. (product_type 알 수 없음)")
+    # 금액 컬럼 처리
+    col_amt = 'received_value_local_currency'
+    if col_amt not in merged_df.columns:
+        print(f"❌ '{col_amt}' 컬럼이 없습니다. 분석 불가.")
+        return
 
-    # 2-6. 최종 필터링 (날짜 & 통화)
-    cond_date = (merged_df['receipt_date'].dt.year == TARGET_YEAR) & \
-                (merged_df['receipt_date'].dt.month == TARGET_MONTH)
+    merged_df[col_amt] = pd.to_numeric(merged_df[col_amt], errors='coerce').fillna(0)
+    # 102(취소)는 마이너스 처리
+    merged_df.loc[merged_df['movement_type'] == '102', col_amt] *= -1
 
-    cond_currency = pd.Series(True, index=merged_df.index)
-    if 'order_currency' in merged_df.columns:
-        cond_currency = (merged_df['order_currency'].fillna('').astype(str).str.strip().str.upper() == 'KRW')
+    # -------------------------------------------------------------------------
+    # 🔍 심층 분석 결과 출력
+    # -------------------------------------------------------------------------
+
+    # A. 통화별 분포 확인
+    print("\n[A] 전체 데이터 통화(Currency) 분포:")
+    print(merged_df['order_currency'].value_counts())
+
+    # B. 외자(Non-KRW)인데 ROH1으로 집계되지 않은 건들 확인
+    # 조건: 통화가 KRW가 아님 AND (자재유형이 UNCLASSIFIED 이거나 ROH1이 아님)
+    print("\n[B] ⚠️ 외자(Non-KRW)이나 'ROH1' 집계에서 제외된 항목들 (누락 의심):")
+
+    non_krw_mask = merged_df['order_currency'] != 'KRW'
+    excluded_mask = merged_df['product_type'] != 'ROH1'
+
+    missing_candidates = merged_df[non_krw_mask & excluded_mask]
+
+    if not missing_candidates.empty:
+        summary = missing_candidates.groupby(['product_type', 'order_currency']).agg(
+            count=('product_id', 'count'),
+            total_amount=(col_amt, 'sum')
+        ).reset_index()
+        print(summary.to_markdown(index=False, floatfmt=",.0f"))
+
+        print("\n>> 상세 샘플 (상위 5개):")
+        cols = ['product_id', 'product_type', 'order_currency', 'movement_type', col_amt, 'description']
+        print(missing_candidates[cols].head(5).to_markdown(index=False))
     else:
-        print("\nℹ️ [Info] 'order_currency' 컬럼이 없어 통화 필터링은 스킵합니다.")
+        print("  >> 특이사항 없음. 모든 외자 건이 ROH1으로 분류됨.")
 
-    final_df = merged_df[cond_date & cond_currency].copy()
-
-    print(f"\n--- [Step 6] 최종 필터링 결과 ({TARGET_YEAR}.{TARGET_MONTH}, KRW) ---")
-    print(f" > 남은 행 개수: {len(final_df)}건")
-
-    if final_df.empty:
-        print("❌ [Result] 최종 조건에 맞는 데이터가 0건입니다.")
-        print("   - 날짜가 다르거나, 통화가 KRW가 아니거나, 이동유형이 101/102가 아닐 수 있습니다.")
+    # C. UNCLASSIFIED (매칭 실패) 상세 분석
+    print("\n[C] ⚠️ 마스터 매칭 실패(UNCLASSIFIED) 중 금액이 큰 건들:")
+    unclassified = merged_df[merged_df['product_type'] == 'UNCLASSIFIED']
+    if not unclassified.empty:
+        top_unclass = unclassified.groupby('product_id')[col_amt].sum().sort_values(ascending=False).head(10)
+        print(top_unclass)
+        print("\n  >> 위 자재 코드들이 'product.csv'에 존재하는지, 앞자리 0 처리가 맞는지 확인하세요.")
     else:
-        print(
-            final_df[['product_id_norm', 'receipt_date', 'movement_type', 'received_value_local_currency']].to_markdown(
-                index=False))
+        print("  >> 매칭 실패 건 없음.")
 
-        total_sum = final_df['received_value_local_currency'].sum()
-        print(f"\n💰 [Final Result] 최종 집계 금액: {total_sum:,.0f}")
+    # D. 정상 집계 결과 (검증용)
+    print("\n[D] 최종 집계 결과 (로직 검증):")
+    roh1_foreign = merged_df[
+        (merged_df['product_type'] == 'ROH1') &
+        (merged_df['order_currency'] != 'KRW')
+        ][col_amt].sum()
+
+    print(f"  👉 현재 로직상 외자 원료(ROH1 + Non-KRW) 합계: {roh1_foreign:,.0f}")
 
 
 if __name__ == "__main__":
-    trace_monthly_closing_logic()
+    debug_foreign_material_aggregation()
