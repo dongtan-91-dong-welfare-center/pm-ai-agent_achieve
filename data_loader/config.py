@@ -8,8 +8,15 @@
 
 import os
 
-# 데이터 저장 경로 (프로젝트 루트 기준)
-DATA_DIR = "data"
+# 절대 경로 설정 (어디서 실행하든 무조건 프로젝트 루트의 data 폴더를 바라봄)
+# 현재 파일(config.py)의 위치: .../pm-ai-agent/data_loader/config.py
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# 부모 디렉터리(프로젝트 루트): .../pm-ai-agent/
+project_root = os.path.dirname(current_dir)
+
+# 데이터 폴더 절대 경로: .../pm-ai-agent/data/
+DATA_DIR = os.path.join(project_root, "data")
 
 # 내부 Key와 실제 파일명 매핑 (대소문자 이슈 해결)
 # 코드는 왼쪽의 Key를 사용하고, 로더는 오른쪽의 파일명을 찾습니다.

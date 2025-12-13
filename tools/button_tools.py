@@ -80,7 +80,7 @@ def run_monthly_closing_process() -> str:
         merged_df = txn_df.merge(prod_unique[['product_id', 'product_type', 'description']], on='product_id', how='left')
 
         # 5. 금액 계산
-        target_col = 'received_value_local_currency'
+        target_col = 'total_received_value_krw'
         if target_col in merged_df.columns:
             merged_df[target_col] = pd.to_numeric(merged_df[target_col], errors='coerce').fillna(0)
             if 'movement_type' in merged_df.columns:
@@ -152,11 +152,19 @@ def run_monthly_closing_process() -> str:
         roh2_krw_ref1 = calculate_sum(ref1_y, ref1_m, 'ROH2', 'KRW')
         roh2_krw_ref2 = calculate_sum(ref2_y, ref2_m, 'ROH2', 'KRW')
 
+        # 분기(Quarter) 계산 헬퍼
+        def get_quarter_str(year, month):
+            q = (month - 1) // 3 + 1
+            return f"{year} {q}Q"
+
+        col_ref1 = get_quarter_str(ref1_y, ref1_m)
+        col_ref2 = get_quarter_str(ref2_y, ref2_m)
+
         # Summary DataFrame 구성
         summary_rows = [
-            {"구분": "내자 원료 (ROH1)", "작년 총합": roh1_krw_last, f"참조1 ({ref1_y}.{ref1_m})": roh1_krw_ref1, f"참조2 ({ref2_y}.{ref2_m})": roh1_krw_ref2, "전월 실적": roh1_krw_prev, "당월 실적": roh1_krw_curr, "전월 대비 증감": roh1_krw_curr - roh1_krw_prev},
-            {"구분": "외자 원료 (ROH1)", "작년 총합": roh1_for_last, f"참조1 ({ref1_y}.{ref1_m})": roh1_for_ref1, f"참조2 ({ref2_y}.{ref2_m})": roh1_for_ref2, "전월 실적": roh1_for_prev, "당월 실적": roh1_for_curr, "전월 대비 증감": roh1_for_curr - roh1_for_prev},
-            {"구분": "내자 자재 (ROH2)", "작년 총합": roh2_krw_last, f"참조1 ({ref1_y}.{ref1_m})": roh2_krw_ref1, f"참조2 ({ref2_y}.{ref2_m})": roh2_krw_ref2, "전월 실적": roh2_krw_prev, "당월 실적": roh2_krw_curr, "전월 대비 증감": roh2_krw_curr - roh2_krw_prev},
+            {"구분": "내자 원료", "작년 총합": roh1_krw_last, col_ref1: roh1_krw_ref1, col_ref2: roh1_krw_ref2, "전월 실적": roh1_krw_prev, "당월 실적": roh1_krw_curr, "전월 대비 증감": roh1_krw_curr - roh1_krw_prev},
+            {"구분": "외자 원료", "작년 총합": roh1_for_last, col_ref1: roh1_for_ref1, col_ref2: roh1_for_ref2, "전월 실적": roh1_for_prev, "당월 실적": roh1_for_curr, "전월 대비 증감": roh1_for_curr - roh1_for_prev},
+            {"구분": "내자 자재", "작년 총합": roh2_krw_last, col_ref1: roh2_krw_ref1, col_ref2: roh2_krw_ref2, "전월 실적": roh2_krw_prev, "당월 실적": roh2_krw_curr, "전월 대비 증감": roh2_krw_curr - roh2_krw_prev},
         ]
 
         # 합계 계산
@@ -188,32 +196,32 @@ def run_monthly_closing_process() -> str:
             if 'po_id' not in current_month_df.columns: current_month_df['po_id'] = '-'
 
             grouped = current_month_df.groupby(['product_id', 'product_type']).agg({
-                'received_value_local_currency': 'sum',
+                target_col: 'sum',
                 'description': 'first',
                 'po_id': lambda x: ', '.join(sorted(x.dropna().astype(str).unique()))[:100] # PO 목록 요약
             }).reset_index()
 
             # ROH1 (원료) Top 1
-            roh1_top = grouped[grouped['product_type'] == 'ROH1'].nlargest(1, 'received_value_local_currency')
+            roh1_top = grouped[grouped['product_type'] == 'ROH1'].nlargest(1, target_col)
             if not roh1_top.empty:
                 row = roh1_top.iloc[0].to_dict()
-                row['구분'] = '원료(ROH1) 최다 지출'
+                row['구분'] = '원료 최다 지출'
                 top_items_list.append(row)
 
             # ROH2 (자재) Top 3
-            roh2_top = grouped[grouped['product_type'] == 'ROH2'].nlargest(3, 'received_value_local_currency')
+            roh2_top = grouped[grouped['product_type'] == 'ROH2'].nlargest(3, target_col)
             if not roh2_top.empty:
                 rank = 1
                 for _, row in roh2_top.iterrows():
                     r_dict = row.to_dict()
-                    r_dict['구분'] = f'자재(ROH2) Top {rank}'
+                    r_dict['구분'] = f'자재 Top {rank}'
                     top_items_list.append(r_dict)
                     rank += 1
 
             df_top_items = pd.DataFrame(top_items_list)
             # 컬럼 순서 정리
             if not df_top_items.empty:
-                target_cols = ['구분', 'product_id', 'description', 'received_value_local_currency', 'po_id']
+                target_cols = ['구분', 'product_id', 'description', target_col, 'po_id']
                 existing_cols = [c for c in target_cols if c in df_top_items.columns]
                 df_top_items = df_top_items[existing_cols]
 
@@ -221,7 +229,7 @@ def run_monthly_closing_process() -> str:
                 rename_map = {
                     'product_id': '자재 코드',
                     'description': '자재명',
-                    'received_value_local_currency': '금액',
+                    target_col: '금액',
                     'po_id': '관련 PO'
                 }
                 df_top_items = df_top_items.rename(columns=rename_map)
