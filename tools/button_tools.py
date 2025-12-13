@@ -14,6 +14,23 @@ from datetime import datetime
 from .shared import DB, OUTPUT_DIR
 
 # =============================================================================
+# [공통 유틸리티] ID 정규화 함수
+# =============================================================================
+def normalize_id(x):
+    """
+    ID 값을 문자열로 변환하고 정규화합니다.
+    - None/NaN -> None
+    - 실수형 문자열(.0) 제거
+    - 앞뒤 공백 제거
+    """
+    if pd.isna(x): return None
+    s = str(x).strip()
+    if s.lower() == 'nan': return None
+    if s.endswith('.0'): s = s[:-2]
+    if not s: return None
+    return s.lstrip('0') # 0 제거 로직 포함
+
+# =============================================================================
 # 2. 발주 현황 공유 파일 생성 (Original Format)
 # =============================================================================
 def run_po_status_report() -> str:

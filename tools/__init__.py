@@ -50,14 +50,6 @@ from .report_tools import (
 )
 
 # -------------------------------------------------------------------------
-# 3. UI 전용 트리거 함수 (UI Trigger Tools)
-# -------------------------------------------------------------------------
-# 용도: LLM의 판단이 아니라, 사용자가 버튼을 눌러 명시적으로 실행하는 함수들
-from .button_tools import (
-    run_monthly_closing_process     # 월 마감 프로세스 강제 실행
-)
-
-# -------------------------------------------------------------------------
 # 4. Agent 도구 레지스트리 (Tool Registry)
 # -------------------------------------------------------------------------
 # LangGraph의 'bind_tools'에 전달될 리스트입니다.
@@ -82,6 +74,4 @@ AGENT_TOOLS = [
     generate_monthly_purchase_closing_report,
     submit_purchase_order,
 
-    # --- 프로세스 (Process) ---
-    run_monthly_closing_process
 ]
