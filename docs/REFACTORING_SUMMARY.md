@@ -105,7 +105,7 @@ agent_routers.py (별도 파일)
 
 **이후**:
 ```python
-# agent_nodes.py 내부
+# old_nodes.py 내부
 
 def route_reasoner(state: AgentState) -> str:
     """라우팅 결정: code_generator | finalize_order | tools | __end__"""
@@ -227,12 +227,13 @@ if execution_status == "error" and error_message:
 ### 기존 코드에서 변경해야 할 부분
 
 **1. Import 경로 업데이트** (이미 완료)
+
 ```python
 # Before
 from agent_routers import route_reasoner, route_after_execution
 
 # After
-from agent_nodes import route_reasoner, route_after_execution
+from core.nodes import route_reasoner, route_after_execution
 ```
 
 **2. `agent_routers.py` 삭제 (선택사항)**

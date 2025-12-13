@@ -31,7 +31,7 @@ except ImportError:
     _HAS_PROMPTS = False
 
 # 라우팅용 Pydantic 모델 & 실행용 함수 도구 Import
-from agent_state import PythonAnalysisRequest, FinalizeOrderRequest
+from core.state import PythonAnalysisRequest, FinalizeOrderRequest
 from tools import AGENT_TOOLS
 
 # 환경 변수 로드 (.env 파일)
@@ -110,7 +110,7 @@ else:
 # --------------------------------------------------------------------------
 
 # A. AGENT_TOOLS: 실제로 실행되는 함수들 (재고 조회, 파일 생성 등) -> tools.py
-# B. Pydantic Models: 실행되지 않고 라우팅 경로만 결정하는 구조체 -> agent_state.py
+# B. Pydantic Models: 실행되지 않고 라우팅 경로만 결정하는 구조체 -> state.py
 # 이 둘을 합쳐서 LLM이 선택할 수 있는 '전체 도구 목록'을 만듭니다.
 all_tools = AGENT_TOOLS + [PythonAnalysisRequest, FinalizeOrderRequest]
 

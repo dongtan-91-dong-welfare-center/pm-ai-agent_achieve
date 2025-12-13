@@ -5,20 +5,20 @@
 - Context Management: HumanMessage 감지 시 대화 맥락(Analysis Data)을 초기화하여 환각을 방지합니다.
 """
 
-from typing import Literal, Dict, Any, List
+from typing import Literal, Any
 import pandas as pd
 import numpy as np
-from langchain_core.messages import AIMessage, SystemMessage, HumanMessage, BaseMessage
+from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
 
 # 내부 모듈 Import
-from agent_state import AgentState
-import agent_config
+from .state import AgentState
+from . import config
 from data_loader import TABLE_SCHEMA
-from prompt import format_schema_for_prompt, CODE_GEN_SYSTEM_PROMPT
-from formatting import format_analysis_result, format_thinking_process, format_hil_prompt
+from .prompt import format_schema_for_prompt, CODE_GEN_SYSTEM_PROMPT
+from interface.formatting import format_analysis_result, format_thinking_process
 import tools
 
-# __all__ 정의: 외부(agent_graph.py)에서 가져다 쓸 함수들 명시
+# __all__ 정의: 외부(graph.py)에서 가져다 쓸 함수들 명시
 __all__ = [
     'reasoner', 'route_reasoner', 'route_after_execution',
     'code_generator', 'code_executor',
@@ -124,10 +124,10 @@ def reasoner(state: AgentState) -> dict:
 
         try:
             # LLM 호출 (Context Window에는 이전 대화 내용이 포함됨)
-            if getattr(agent_config, 'chain_prompt_llm', None) is not None:
-                response = agent_config.chain_prompt_llm.invoke({"messages": messages})
+            if getattr(config, 'chain_prompt_llm', None) is not None:
+                response = config.chain_prompt_llm.invoke({"messages": messages})
             else:
-                response = agent_config.llm.invoke({"messages": messages})
+                response = config.llm.invoke({"messages": messages})
 
             # 응답 타입 안전성 확보
             final_response = response
@@ -202,7 +202,7 @@ def reasoner(state: AgentState) -> dict:
 
     # Tool Call 후처리 (ToolMessage가 마지막일 경우 LLM 재호출)
     if hasattr(last_message, "tool_call_id") or last_message.type == "tool":
-        response = agent_config.chain_prompt_llm.invoke({"messages": messages})
+        response = config.chain_prompt_llm.invoke({"messages": messages})
         return ensure_messages_list({"messages": [response]})
 
     # Fallback
@@ -252,7 +252,7 @@ def code_generator(state: AgentState) -> dict:
 
     try:
         # Code Generation LLM 호출
-        response = agent_config.llm.invoke([
+        response = config.llm.invoke([
             SystemMessage(content=system_content),
             HumanMessage(content=user_question)
         ])

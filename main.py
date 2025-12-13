@@ -11,8 +11,8 @@ import os
 from langchain_core.messages import HumanMessage, AIMessage
 
 # 내부 모듈 Import
-import ui_components as ui
-from agent_graph import create_graph
+from interface import components as ui
+from core.graph import create_graph
 
 # --------------------------------------------------------------------------
 # 1. 초기 설정 및 리소스 로드 (Initialization)

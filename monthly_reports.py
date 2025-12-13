@@ -8,6 +8,7 @@
 """
 
 import pandas as pd
+from tools.shared_logic import calculate_overage
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Tuple, Optional
 
@@ -151,6 +152,12 @@ class MonthlyReportGenerator:
                     component_id = bom.get("component_product_id")
                     component_qty = bom.get("component_qty", 0)
                     required_qty = plan_qty * component_qty
+                    # Apply overage rule (additional requirement)
+                    try:
+                        overage = calculate_overage(self.db, component_id, required_qty)
+                        required_qty += overage
+                    except Exception:
+                        pass
                     
                     if component_id not in material_requirements:
                         material_requirements[component_id] = 0

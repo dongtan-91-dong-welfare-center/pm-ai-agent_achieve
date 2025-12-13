@@ -1,5 +1,11 @@
 import pandas as pd
-import openpyxl
+try:
+    import openpyxl
+    _HAS_OPENPYXL = True
+except Exception:
+    # openpyxl may not be available in minimal test environments
+    openpyxl = None  # type: ignore
+    _HAS_OPENPYXL = False
 import re
 from typing import List, Union
 
@@ -412,6 +418,8 @@ def process_production_plan(uploaded_file) -> pd.DataFrame:
     [Plan] 생산 계획 파싱 (OpenPyXL 사용)
     주의: 이 함수는 DataFrame이 아닌 '파일 객체'를 입력받습니다.
     """
+    if not _HAS_OPENPYXL:
+        raise ImportError("openpyxl is required to parse production plan files. Install openpyxl to enable this functionality.")
     wb = openpyxl.load_workbook(uploaded_file, data_only=True)
     all_plans = []
 

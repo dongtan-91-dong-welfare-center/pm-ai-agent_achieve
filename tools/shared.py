@@ -8,7 +8,7 @@
 
 [Key Architecture Note]
 - 이 모듈이 임포트되는 순간 데이터 로딩이 시작됩니다(Import Side Effect).
-- 로드된 `DB` 객체는 `agent_nodes.py` 등에서 참조만 할 뿐, 원본을 변형해서는 안 됩니다(Immutable 지향).
+- 로드된 `DB` 객체는 `old_nodes.py` 등에서 참조만 할 뿐, 원본을 변형해서는 안 됩니다(Immutable 지향).
 """
 
 import os

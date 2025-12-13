@@ -1,42 +1,54 @@
-# --- 환경 변수 및 비밀 키 ---
-# 절대로 비밀 키를 Git에 올리지 마세요!
+# --- 1. 환경 변수 및 보안 (절대 커밋 금지) ---
 .env
 .env.*
+*.key
+secrets.json
 
-# --- Poetry 및 Python 가상 환경 ---
-# Poetry가 생성하는 가상 환경 폴더
+# --- 2. 가상 환경 및 패키지 ---
 .venv/
 venv/
-*.venv
+ENV/
+env/
 
-# Poetry 캐시
-.poetry-cache/
-
-# Python 캐시 파일
+# --- 3. Python 캐시 및 빌드 파일 ---
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
 
-# --- IDE 설정 ---
+# --- 4. IDE 및 OS 자동 생성 파일 ---
 # VSCode
 .vscode/
+*.code-workspace
 
-# PyCharm
+# PyCharm (JetBrains)
 .idea/
 
-# --- 운영체제(OS) 자동 생성 파일 ---
+# Mac OS (필수)
+.DS_Store
+
 # Windows
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 
-# --- 실제 현업 데이터 DATA ---
+# --- 5. 프로젝트 데이터 및 결과물 (데이터 보안) ---
+# 원본 데이터 및 결과물은 로컬에만 보관
 /data/
-
-# --- 회의록 ---
-/meeting_notes/
-
-# --- 테스트 코드 ---
-/tests/
-
-# --- 결과물 ---
 /output/
+/tmp_test_data/
+
+# --- 6. 문서 및 회의록 (선택 사항) ---
+/meeting_notes/
+/docs/meeting_note/
+
+# --- 7. 백업 및 아카이브 ---
+/archive/
+/agent/nodes_backup/
+*_legacy.py

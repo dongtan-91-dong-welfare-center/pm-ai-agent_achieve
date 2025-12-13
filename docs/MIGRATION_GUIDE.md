@@ -58,10 +58,10 @@ After:
 
 ```bash
 # 다음 파일들이 이미 업데이트되었는지 확인:
-ls -la agent_state.py      # 필드 확인
-ls -la agent_config.py     # import 정리됨
-ls -la agent_nodes.py      # 라우터 함수 포함
-ls -la agent_graph.py      # import 경로 수정됨
+ls -la state.py      # 필드 확인
+ls -la config.py     # import 정리됨
+ls -la old_nodes.py      # 라우터 함수 포함
+ls -la graph.py      # import 경로 수정됨
 ```
 
 ### Step 2: 기존 코드 백업 (선택사항)
@@ -139,12 +139,13 @@ git push origin feature/6-func-141
 **원인**: 기존 코드에서 `agent_routers` import 시도
 
 **해결**:
+
 ```python
 # Before
 from agent_routers import route_reasoner, route_after_execution
 
 # After
-from agent_nodes import route_reasoner, route_after_execution
+from core.nodes import route_reasoner, route_after_execution
 ```
 
 ### 문제 2: 상태 필드 누락 (`current_plan_id`)
