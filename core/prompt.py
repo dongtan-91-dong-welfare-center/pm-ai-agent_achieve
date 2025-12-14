@@ -94,7 +94,15 @@ CODE_GEN_SYSTEM_PROMPT = """
 ### 🚫 제약 사항 (Strict Constraints)
 1. **도구 사용 금지**: `get_current_stock`이나 API를 호출하지 마십시오. 필요한 데이터는 이미 변수에 있습니다.
 2. **데이터 로드 금지**: `pd.read_csv`, `pd.read_excel`을 절대 사용하지 마십시오. 데이터는 이미 `df_...` 변수에 로드되어 있습니다.
-3. **시각화 라이브러리 금지**: `matplotlib`, `seaborn`, `plot` 등을 사용하지 마십시오. 오직 데이터 연산 결과만 필요합니다.
+
+### 📈 시각화 및 그래프 작성 지침
+- 사용자가 그래프/차트를 요청하면 `matplotlib`나 `seaborn`을 사용하여 코드를 작성하십시오.
+- **한글 폰트 깨짐 방지**: 그래프 작성 전 반드시 아래 코드를 포함하십시오.
+  `import matplotlib.pyplot as plt`
+  `plt.rcParams['font.family'] = 'Malgun Gothic'` (Windows) 또는 `AppleGothic` (Mac)
+  `plt.rcParams['axes.unicode_minus'] = False`
+- **결과 반환**: `plt.show()`를 사용하지 마십시오. 대신 생성된 Figure 객체를 `result`에 할당하십시오.
+  예: `fig = plt.gcf(); result = fig`
 
 ### 💾 사용 가능한 데이터 (In-Memory DataFrames)
 이미 메모리에 로드된 아래 변수들을 직접 사용하십시오.
@@ -124,12 +132,10 @@ CODE_GEN_SYSTEM_PROMPT = """
    - 모든 테이블의 핵심 키(Key)는 `product_id`입니다.
    - `product_id`는 문자열(String) 타입이므로 형 변환에 유의하여 `pd.merge()`를 수행하십시오.
 
-### ⚠️ 출력 데이터 제한 (Output Regulation)
-- 결과가 **20행을 초과**할 경우, 전체를 출력하지 말고 다음 중 하나를 수행하십시오:
-  1. **집계(Aggregation)**: `groupby` 등을 사용하여 요약 통계를 반환.
-  2. **Top N**: `.head(10)` 등을 사용하여 상위 항목만 반환.
-  3. **요약 메시지**: "총 OO건이 검색되었습니다." 형태의 문자열 반환.
-- **절대로 수천 건의 Row 데이터를 그대로 `result`에 할당하지 마십시오.** (토큰 초과 방지)
+### 📊 데이터 출력 지침 (Data Output Guidelines)
+1. **전체 데이터 반환 원칙**: 사용자가 명시적으로 개수 제한(예: "상위 10개만")을 요청하지 않는 한, **조회된 전체 데이터(DataFrame)를 `result` 변수에 할당**하십시오.
+2. **대용량 데이터 주의**: 데이터가 매우 클 경우(10,000행 이상), 전체를 반환하되 주석으로 데이터 크기를 언급하십시오.
+3. **불필요한 축약 금지**: 사용자는 원본 전체 내역을 보기를 원합니다. 임의로 `.head()`를 사용하지 마십시오.
 
 ### 🎯 목표 (Goal)
 질문에 대한 답을 계산하여 반드시 **`result` 변수에 할당**하십시오.
