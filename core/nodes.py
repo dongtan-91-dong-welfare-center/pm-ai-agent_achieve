@@ -8,7 +8,7 @@
 from typing import Literal, Any
 import pandas as pd
 import numpy as np
-from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
+from langchain_core.messages import AIMessage, SystemMessage, HumanMessage, ToolMessage
 
 # 내부 모듈 Import
 from .state import AgentState
@@ -94,27 +94,71 @@ def ensure_messages_list(result: dict) -> dict:
 
 def reasoner(state: AgentState) -> dict:
     """
-    [Node: Reasoner] - The Brain
+    [Node: Reasoner] - The Brain (Final Revised)
     사용자의 입력을 해석하고, 대화의 맥락을 관리하며, 최종 답변을 생성하는 진입점입니다.
-
-    Key Features:
-        1. Context Reset: 사용자가 새로운 주제(New Turn)를 시작하면 이전 분석 데이터(analysis_data)를 초기화합니다.
-        2. Tool Result Interpretation: 도구 실행 결과를 바탕으로 최종 답변을 작성합니다.
-        3. Error Reporting: 실행 중 발생한 에러를 사용자 친화적인 메시지로 변환합니다.
     """
     print("--- NODE: Reasoner ---")
     messages = state.get("messages", [])
 
-    # 1. 초기 진입 처리 (Empty Message)
+    # 1. 초기 진입 처리
     if not messages:
         return {"messages": [AIMessage(content="안녕하세요! 생산 관리 AI Agent입니다. 무엇을 도와드릴까요?")]}
 
     last_message = messages[-1]
 
-    # [핵심 로직 1] 새로운 사용자 질문(HumanMessage) 감지 및 상태 초기화
-    # 사용자가 질문을 던졌다는 것은, 이전 분석 결과가 더 이상 유효하지 않을 수 있음을 의미합니다.
+    # ---------------------------------------------------------------------
+    # [Logic 1] 실행 상태(Execution Status) 기반 처리 (Reporting)
+    # Code Executor나 Tool 실행 후 결과를 보고하거나 에러를 알리는 단계
+    # ---------------------------------------------------------------------
+
+    # (1-1) 에러 발생 시 사용자 보고
+    if state.get("execution_status") == "error":
+        error_msg = state.get("code_execution_result", "알 수 없는 오류")
+        return ensure_messages_list({
+            "messages": [AIMessage(content=f"작업을 수행하는 도중 오류가 발생했습니다.\n(내용: {error_msg})")],
+            "execution_status": "done"  # 에러 보고 후 상태 완료 처리
+        })
+
+    # (1-2) Code Executor 실행 성공 후 보고
+    if state.get("execution_status") == "success" and state.get("analysis_data"):
+        result_data = state["analysis_data"].get("last_run_result", "결과 없음")
+        formatted_result = format_analysis_result(result_data, "분석 결과")
+
+        # CoT 로그 포맷팅
+        thinking_steps = state.get("thinking_steps", [])
+        thinking_output = format_thinking_process(thinking_steps) if thinking_steps else ""
+
+        final_msg = thinking_output + "\n\n" + formatted_result
+        return ensure_messages_list({
+            "messages": [AIMessage(content=final_msg)],
+            "execution_status": "done",
+            "user_approval_pending": True
+        })
+
+    # ---------------------------------------------------------------------
+    # [Logic 2] 메시지 타입 기반 처리 (Reasoning)
+    # LLM을 호출하여 다음 행동(도구 선택 or 답변)을 결정하는 단계
+    # ---------------------------------------------------------------------
+
+    # (2-1) 도구 실행 완료 후 (ToolMessage) -> 결과를 해석하여 최종 답변 생성
+    # ToolNode 실행 직후 돌아왔을 때, 결과를 보고 LLM이 해석을 내놓아야 함
+    if isinstance(last_message, ToolMessage) or (
+            hasattr(last_message, "tool_call_id") and last_message.tool_call_id) or last_message.type == "tool":
+        print(">>> Analyzing Tool Result...")
+        try:
+            if getattr(config, 'chain_prompt_llm', None) is not None:
+                response = config.chain_prompt_llm.invoke({"messages": messages})
+            else:
+                response = config.llm.invoke({"messages": messages})
+
+            return ensure_messages_list({"messages": [response]})
+        except Exception as e:
+            return ensure_messages_list({"messages": [AIMessage(content=f"결과 해석 중 오류: {e}")]})
+
+    # (2-2) 사용자의 새로운 질문 (HumanMessage) -> LLM 호출
+    # 가장 일반적인 케이스. 사용자의 질문을 분석하고 도구를 고르거나 대답함.
     if isinstance(last_message, HumanMessage):
-        # 명시적인 초기화 키워드 확인 (Optional)
+        # 새로운 대화 감지 로직
         new_convo_keywords = ["새로운", "처음", "초기화", "reset", "다시 시작", "새로 시작", "처음으로"]
         last_text = (getattr(last_message, 'content', '') or '').lower()
         is_new_conversation = any(k in last_text for k in new_convo_keywords)
@@ -123,13 +167,33 @@ def reasoner(state: AgentState) -> dict:
             print(">>> New Interaction Detected: Full Reset of State...")
 
         try:
-            # LLM 호출 (Context Window에는 이전 대화 내용이 포함됨)
+            # LLM 호출
             if getattr(config, 'chain_prompt_llm', None) is not None:
                 response = config.chain_prompt_llm.invoke({"messages": messages})
             else:
                 response = config.llm.invoke({"messages": messages})
 
-            # 응답 타입 안전성 확보
+            # =================================================================
+            # [우선순위 1] Tool Call 감지 (도구 실행 의도 파악)
+            # =================================================================
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                print(f">>> LLM Generated Tool Calls: {len(response.tool_calls)}")
+
+                base_update = {
+                    "messages": [response],
+                    "execution_status": None,
+                }
+
+                if is_new_conversation:
+                    base_update["analysis_data"] = {}
+
+                return ensure_messages_list(base_update)
+
+            # =================================================================
+            # [우선순위 2] 일반 대화 처리 (순수 텍스트 답변)
+            # =================================================================
+
+            # [복구된 로직] 응답 타입 안전성 확보 (final_response 예외 처리)
             final_response = response
             if isinstance(response, str):
                 final_response = AIMessage(content=response)
@@ -138,12 +202,12 @@ def reasoner(state: AgentState) -> dict:
             else:
                 final_response = AIMessage(content=str(response))
 
-            # [상태 관리전략] HumanMessage가 들어왔을 때의 State Update
+            # 상태 초기화 및 답변 반환
             if is_new_conversation:
                 return ensure_messages_list({
                     "messages": [final_response],
                     "execution_status": None,
-                    "analysis_data": {},  # [중요] 이전 데이터 클리어
+                    "analysis_data": {},
                     "generated_code": None,
                     "code_execution_result": None,
                     "retry_count": 0,
@@ -153,7 +217,6 @@ def reasoner(state: AgentState) -> dict:
                     "user_feedback": None
                 })
 
-            # 일반 대화(Multi-turn)에서도 실행 관련 상태는 리셋
             return ensure_messages_list({
                 "messages": [final_response],
                 "generated_code": None,
@@ -167,47 +230,14 @@ def reasoner(state: AgentState) -> dict:
             print(f"❌ LLM invocation error: {str(e)}")
             return ensure_messages_list({
                 "messages": [AIMessage(content=f"시스템 오류: {str(e)}")],
-                "execution_status": None,
-                "retry_count": 0
+                "execution_status": "error"
             })
 
-    # [핵심 로직 2] Code Executor가 성공적으로 데이터를 가져온 후 (Reporting)
-    if state.get("execution_status") == "success" and state.get("analysis_data"):
-        result_data = state["analysis_data"].get("last_run_result", "결과 없음")
-
-        # 결과 포맷팅 (Markdown Table 등)
-        formatted_result = format_analysis_result(result_data, "분석 결과")
-
-        # CoT(Chain of Thought) 로그 포맷팅
-        thinking_steps = state.get("thinking_steps", [])
-        thinking_output = ""
-        if thinking_steps:
-            thinking_output = format_thinking_process(thinking_steps)
-
-        final_message = thinking_output + "\n\n" + formatted_result
-
-        return ensure_messages_list({
-            "messages": [AIMessage(content=final_message)],
-            "execution_status": "done",
-            "user_approval_pending": True  # HIL 승인 대기 가능 상태로 전환
-        })
-
-    # [핵심 로직 3] 에러 발생 시 사용자 보고
-    if state.get("execution_status") == "error":
-        error_msg = state.get("code_execution_result", "알 수 없는 오류")
-        return ensure_messages_list({
-            "messages": [AIMessage(content=f"작업을 수행하는 도중 오류가 발생했습니다.\n(내용: {error_msg})")],
-            "execution_status": "done"
-        })
-
-    # Tool Call 후처리 (ToolMessage가 마지막일 경우 LLM 재호출)
-    if hasattr(last_message, "tool_call_id") or last_message.type == "tool":
-        response = config.chain_prompt_llm.invoke({"messages": messages})
-        return ensure_messages_list({"messages": [response]})
-
-    # Fallback
+    # ---------------------------------------------------------------------
+    # [Logic 3] Fallback (예외 상황)
+    # ---------------------------------------------------------------------
+    # 위 조건에 모두 해당하지 않는 경우 (예: AIMessage가 연속으로 들어오는 등)
     return ensure_messages_list({"messages": [AIMessage(content="다음 작업을 진행할 수 없습니다.")]})
-
 
 def code_generator(state: AgentState) -> dict:
     """
