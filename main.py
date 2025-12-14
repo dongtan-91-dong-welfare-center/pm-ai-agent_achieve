@@ -19,6 +19,32 @@ ui.setup_page_config()
 def get_graph():
     return create_graph()
 
+def extract_file_path_from_tool(content):
+    """도구 실행 결과에서 파일 경로 추출"""
+    try:
+        if isinstance(content, dict):
+            return content.get("file_path")
+        if isinstance(content, str) and "file_path" in content:
+            # 딕셔너리 형태의 문자열 파싱 시도
+            try:
+                # 안전하지 않은 eval 대신 ast.literal_eval 사용 권장되나,
+                # 포맷이 불확실할 경우를 대비해 간단한 정규식이나 string search도 고려
+                if content.strip().startswith("{"):
+                    data = ast.literal_eval(content)
+                    if isinstance(data, dict):
+                        return data.get("file_path")
+            except:
+                pass
+
+            # Markdown 링크 등에서 경로 추출 시도 (백업 로직)
+            import re
+            match = re.search(r'`(.*?\.xlsx)`', content)
+            if match:
+                return match.group(1)
+    except:
+        pass
+    return None
+
 ui.render_sidebar()
 st.title("생산 관리 AI Agent")
 
@@ -63,14 +89,65 @@ if user_input:
         full_response = ""
         analysis_artifact = None
 
+        # 스트리밍 중 발생한 ToolMessage를 임시 저장할 리스트
+        new_tool_messages = []
+
+        # 새로운 요청이 오면 기존 다운로드 버튼 상태 초기화
+        keys_to_clear = ["monthly_report_path", "po_status_path", "supplier_eval_path"]
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
+
         try:
             inputs = {"messages": st.session_state["messages"]}
 
             for event in app.stream(inputs, config=config):
                 for node_name, state_update in event.items():
 
+                    # 1. Reasoner (생각 및 대화)
                     if node_name == "reasoner":
-                        status_container.write("🧠 **[분석]** 사용자 의도를 파악하고 계획을 수립했습니다.")
+                        messages = state_update.get("messages", [])
+                        if messages:
+                            last_msg = messages[-1]
+
+                            # Case A: 도구를 호출하려고 할 때
+                            if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
+                                tools_str = ", ".join([tc['name'] for tc in last_msg.tool_calls])
+                                status_container.markdown(f"🧠 **[계획 수립]** `{tools_str}` 도구를 실행합니다.")
+
+                            # Case B: 도구 없이 그냥 말할 때 (질문하기, 인사하기 등)
+                            # Agent의 발언 내용을 상태창에 미리 보여줍니다.
+                            else:
+                                content_preview = last_msg.content[:100] + "..." if len(
+                                    last_msg.content) > 100 else last_msg.content
+                                # status_container.markdown(f"🤔 **[생각/질문]** {content_preview}")
+                                # (이 내용은 잠시 후 아래 full_response로도 채팅창에 예쁘게 나옵니다)
+
+                    # 2. Tools (실행 및 경로 감지)
+                    elif node_name == "tools":
+                        tool_msgs = state_update.get("messages", [])
+                        for t_msg in tool_msgs:
+                            if isinstance(t_msg, ToolMessage):
+                                # (1) UI 표시
+                                if "create_" in t_msg.name:
+                                    status_container.write(f"💾 **[파일 생성]** {t_msg.name} 완료")
+                                else:
+                                    # status_container.write(f"🔧 **[실행 완료]** {t_msg.name}")
+                                    # with status_container.expander(f"결과 보기: {t_msg.name}"):
+                                    status_container.write(f"🔧 **[실행 완료]** {t_msg.name}")
+                                    # st.markdown(t_msg.content)
+
+                                # (2) 파일 경로 감지 및 세션 저장
+                                file_path = extract_file_path_from_tool(t_msg.content)
+                                if file_path:
+                                    if t_msg.name == "create_monthly_closing_file":
+                                        st.session_state["monthly_report_path"] = file_path
+                                    elif t_msg.name == "create_po_status_file":
+                                        st.session_state["po_status_path"] = file_path
+                                    elif t_msg.name == "create_supplier_evaluation_file":
+                                        st.session_state["supplier_eval_path"] = file_path
+
+                                new_tool_messages.append(t_msg)
 
                     elif node_name == "code_generator":
                         status_container.write("💻 **[설계]** 데이터 분석용 Python 코드를 생성했습니다.")
@@ -104,13 +181,26 @@ if user_input:
             if analysis_artifact:
                 ai_msg.additional_kwargs["artifact"] = analysis_artifact
 
+            # 루프가 끝난 후 세션 상태 업데이트 (GeneratorExit 방지)
+            for tm in new_tool_messages:
+                st.session_state["messages"].append(tm)
+
+            ai_msg = AIMessage(content=full_response)
+            if analysis_artifact:
+                ai_msg.additional_kwargs["artifact"] = analysis_artifact
+
             # 중복 추가 방지 (스트리밍 중 이미 추가된 경우가 아니라면 추가)
             if not st.session_state["messages"] or st.session_state["messages"][-1].content != full_response:
                 st.session_state["messages"].append(ai_msg)
 
-        except Exception as e:
-            status_container.update(label="오류 발생", state="error")
-            st.error(f"시스템 오류가 발생했습니다: {e}")
+        # GeneratorExit 및 모든 시스템 예외 처리
+        except BaseException as e:
+            # GeneratorExit는 정상 종료의 일종일 수 있으므로 무시하거나 로그만 남김
+            if type(e).__name__ == "GeneratorExit":
+                pass
+            else:
+                status_container.update(label="오류 발생", state="error")
+                st.error(f"시스템 오류 발생: {str(e)}")
 
 # --------------------------------------------------------------------------
 # 4. HIL (Human-in-the-Loop)
@@ -137,7 +227,6 @@ if user_input:
 # --------------------------------------------------------------------------
 # 5. 파일 다운로드 영역
 # --------------------------------------------------------------------------
-# (기존 코드 유지)
 if "monthly_report_path" in st.session_state:
     file_path = st.session_state["monthly_report_path"]
     if os.path.exists(file_path):
