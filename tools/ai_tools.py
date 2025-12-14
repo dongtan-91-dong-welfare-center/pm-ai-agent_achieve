@@ -26,10 +26,12 @@ from .order_tools import (
 
 # 3. 보고서 생성 도구 (Report Tools)
 from .report_tools import (
-    generate_excel_report,                    # 범용 엑셀 리포트 생성기
-    generate_monthly_purchase_closing_report, # 월간 구매 마감 보고서 생성
-    generate_po_status_report,  #  발주 내역
-    generate_supplier_evaluation_report,    # 공급업체 평가
+    # monthly closing
+    generate_monthly_purchase_closing_report, analyze_monthly_closing, create_monthly_closing_file,
+    # PO status
+    generate_po_status_report, analyze_po_status, create_po_status_file,
+    # supplier eval
+    generate_supplier_evaluation_report, analyze_supplier_evaluation, create_supplier_evaluation_file,
 )
 
 # 외부에서 'from tools.ai_tools import *' 사용 시 노출될 목록 정의
@@ -49,8 +51,7 @@ __all__ = [
     'submit_purchase_order_sync',
 
     # Report
-    'generate_excel_report',
-    'generate_monthly_purchase_closing_report',
-    'generate_po_status_report',
-    'generate_supplier_evaluation_report',
+    'analyze_monthly_closing','create_monthly_closing_file','generate_monthly_purchase_closing_report',
+    'analyze_po_status','create_po_status_file','generate_po_status_report',
+    'analyze_supplier_evaluation','create_supplier_evaluation_file','generate_supplier_evaluation_report',
 ]

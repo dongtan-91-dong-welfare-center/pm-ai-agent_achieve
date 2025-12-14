@@ -1,6 +1,5 @@
 """
 설명: tools 패키지의 진입점(Entry Point)이자, AI Agent가 사용할 도구들의 레지스트리(Registry)입니다.
-수정일: 2025.12.13
 
 [Role & Responsibility]
 - 모듈화(Modularity): 기능별로 분리된(stock, order, report) 도구들을 하나로 묶어 외부로 노출합니다.
@@ -44,10 +43,12 @@ from .order_tools import (
 # C. 보고서 생성 도구 (Reporting)
 # 용도: 엑셀 파일 생성, 월간 마감 리포트
 from .report_tools import (
-    generate_excel_report,                    # 범용 엑셀 리포트 생성기
-    generate_monthly_purchase_closing_report, # 월간 구매 마감 보고서 생성
-    generate_po_status_report,  #  발주 내역
-    generate_supplier_evaluation_report,    # 공급업체 평가
+    # 월말 구매 마감 보고서 (refactored)
+    generate_monthly_purchase_closing_report, analyze_monthly_closing, create_monthly_closing_file,
+    # 발주 현황
+    generate_po_status_report, analyze_po_status, create_po_status_file,
+    # 공급업체 평가
+    generate_supplier_evaluation_report, analyze_supplier_evaluation, create_supplier_evaluation_file,
 )
 
 # -------------------------------------------------------------------------
@@ -70,7 +71,10 @@ AGENT_TOOLS = [
     generate_purchase_prediction,
 
     # --- 실행 및 생성 (Action/Write) ---
-    generate_excel_report,
+    # analysis-only tools
+    analyze_monthly_closing, analyze_po_status, analyze_supplier_evaluation,
+    # create tools
+    create_monthly_closing_file, create_po_status_file, create_supplier_evaluation_file,
     generate_monthly_purchase_closing_report,
     submit_purchase_order,
     generate_po_status_report,
