@@ -115,57 +115,26 @@ def render_quick_prompts():
     clicked_prompt = None
 
     # =========================================================================
-    # [Type 1] Agent Trigger: 월말 구매 마감 리포트
-    # 의도: 리포트 생성은 복잡하므로 Agent의 프로세스를 타되, 프롬프트 입력을 자동화함.
+    # 버튼 1: 월말 구매 마감 리포트 (기존 유지 - 잘 동작함)
     # =========================================================================
     if col1.button("📅 월말 구매 마감 리포트", use_container_width=True):
         clicked_prompt = "이번 달 구매 마감 결과를 알려주고, 리포트를 생성해줘."
 
     # =========================================================================
-    # [Type 2] Direct Execution: 공급업체 평가 (Agent Bypass)
-    # 의도: 정해진 로직(Rule-based)이므로 LLM을 거치지 않고 즉시 결과 파일만 생성.
+    # [수정] 버튼 2: 공급업체 평가
+    # 키워드: '평가 관리 양식' (단순 '평가해줘'는 LLM이 직접 계산하려고 함)
     # =========================================================================
     if col2.button("📊 공급업체 평가", use_container_width=True):
-        # clicked_prompt를 None으로 유지하여 main.py의 Agent 루프를 타지 않음
-
-        with st.spinner("입고 이력 및 부적합 내역 분석 중..."):
-            try:
-                result_msg = button_tools.run_supplier_evaluation_report()
-
-                if "완료" in result_msg:
-                    st.success(result_msg)
-                    # 경로 추출 및 세션 저장
-                    match = re.search(r'평가양식 생성 완료:\s*(.*?.xlsx)', result_msg)
-                    if match:
-                        st.session_state['supplier_eval_path'] = match.group(1).strip()
-                else:
-                    st.error(result_msg)
-
-            except Exception as e:
-                st.error(f"오류 발생: {e}")
+        clicked_prompt = "공급업체 평가 관리 양식(엑셀)을 생성해줘."
 
     # =========================================================================
-    # [Type 2] Direct Execution: 발주 현황 공유 파일 (Agent Bypass)
+    # [수정] 버튼 3: 발주 현황 공유 파일
+    # 키워드: '발주 현황 공유 파일', '최근 2년' (도구 설명과 일치시킴)
     # =========================================================================
     if col3.button("📂 발주 현황 공유 파일", use_container_width=True):
-        with st.spinner("최근 2년 데이터를 조회하여 시트 분할 중입니다..."):
-            try:
-                result_msg = button_tools.run_po_status_report()
-
-                if "파일 생성 완료" in result_msg:
-                    st.success(result_msg)
-                    match = re.search(r'파일 생성 완료:\s*(.*?.xlsx)', result_msg)
-                    if match:
-                        st.session_state['po_status_path'] = match.group(1).strip()
-                elif "알림" in result_msg:
-                    st.warning(result_msg)
-                else:
-                    st.error(result_msg)
-            except Exception as e:
-                st.error(f"오류 발생: {e}")
+        clicked_prompt = "최근 2년치 발주 현황 공유 파일을 생성해줘."
 
     return clicked_prompt
-
 
 def render_analysis_result(result_data):
     """
