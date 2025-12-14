@@ -1,13 +1,10 @@
 """
-파일명: main.py
-설명: Streamlit 앱 진입점 (도구 실행 결과 시각화 기능 추가)
-작성자: 생산 관리 AI Agent 컨설턴트
-수정일: 2025.12.13 (Add Tool Output Visualization)
+설명: Streamlit 앱 진입점
 """
 
 import streamlit as st
 import os
-# [수정 1] ToolMessage 추가 Import
+# ToolMessage 추가 Import
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 
 import interface.components as ui
@@ -38,15 +35,6 @@ for msg in st.session_state.messages:
     if isinstance(msg, HumanMessage):
         with st.chat_message("user"):
             st.write(msg.content)
-
-    # [NEW] 도구 실행 결과(Evidence) 표시
-    elif isinstance(msg, ToolMessage):
-        with st.chat_message("assistant"):
-            # 도구 이름과 결과를 접이식 메뉴로 표시하여 가독성 확보
-            tool_name = msg.name
-            with st.expander(f"🛠️ [근거 데이터] {tool_name} 실행 결과 보기"):
-                # Markdown Table 등이 포함되어 있으므로 그대로 렌더링
-                st.markdown(msg.content)
 
     elif isinstance(msg, AIMessage):
         with st.chat_message("assistant"):
@@ -98,20 +86,6 @@ if user_input:
                                 analysis_artifact = state_update["analysis_data"].get("last_run_result")
                         elif status == "error":
                             status_container.write(f"⚠️ **[오류]** 실행 실패, 재시도합니다.")
-
-                    # [수정 3] 도구(Tools) 노드 실행 시각화 (실시간 스트리밍 중 표시)
-                    elif node_name == "tools":
-                        status_container.write("🔧 **[도구]** 외부 데이터/기능을 조회했습니다.")
-
-                        # state_update['messages']에 ToolMessage 리스트가 들어있음
-                        tool_msgs = state_update.get("messages", [])
-                        for t_msg in tool_msgs:
-                            if isinstance(t_msg, ToolMessage):
-                                with st.expander(f"🛠️ [근거 데이터] {t_msg.name} 결과"):
-                                    st.markdown(t_msg.content)
-
-                                # 세션에 즉시 추가 (화면 갱신 시 유지되도록)
-                                st.session_state["messages"].append(t_msg)
 
                     # 최종 답변 스트리밍
                     if "messages" in state_update and state_update["messages"]:
