@@ -8,10 +8,7 @@
 
 import streamlit as st
 import pandas as pd
-import os
-import re
 from data_loader import load_master_data, save_uploaded_file_by_type, FILE_PROCESSORS
-from tools import button_tools
 
 # 브랜드 컬러 정의 (Orange)
 PRIMARY_COLOR = "#d78632"
@@ -118,7 +115,7 @@ def render_quick_prompts():
     # 버튼 1: 월말 구매 마감 리포트 (기존 유지 - 잘 동작함)
     # =========================================================================
     if col1.button("📅 월말 구매 마감 리포트", use_container_width=True):
-        clicked_prompt = "이번 달 구매 마감 결과를 알려주고, 리포트를 생성해줘."
+        clicked_prompt = "이번 달 마감 현황을 먼저 분석해서 보여주고, 이상이 없으면 리포트 파일을 생성해줘."
 
     # =========================================================================
     # [수정] 버튼 2: 공급업체 평가
