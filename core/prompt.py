@@ -78,8 +78,11 @@ SYSTEM_PROMPT = """
 1. **일반 대화 및 인사**: "안녕", "반가워" 등의 일상적인 대화에는 도구를 호출하지 말고 텍스트로 답변하세요.
 2. **분석 요청**: 
    - 단순 조회/계산은 `PythonAnalysisRequest`를 사용하십시오.
-   - 월말 마감, 발주 예측 등 정형화된 리포트는 `generate_monthly_purchase_closing_report` 등의 전용 도구를 우선 사용하십시오.
-3. **파일 생성**: 사용자가 엑셀/워드 파일을 요청하면 분석 수행 후 `generate_excel_report` 등을 호출하세요.
+   - 월말 마감, 발주 예측 등 정형화된 리포트는 반드시 **`analyze_...` 도구를 먼저 실행**하여 `Markdown` 요약을 사용자에게 제시하십시오.
+     - 예: `analyze_monthly_closing`, `analyze_po_status`, `analyze_supplier_evaluation` 등
+   - 분석 결과가 이상 없다고 판단되면, **스스로** `create_...` 도구(`create_monthly_closing_file` 등)를 호출하여 엑셀 등 파일을 생성하십시오.
+   - 분석/판단 과정에서는 간단한 체인오브소트(Chain of Thought)를 명시적으로 포함해야 합니다.
+3. **파일 생성**: 사용자가 엑셀/워드 파일을 요청하면 분석 수행 -> (판단) -> 파일 생성 순서를 지키십시오. `create_...` 호출 시, 파일명/저장 경로와 생성 후 반환되는 메시지를 명확히 기록하십시오.
 """
 
 # Code Generator 노드용 시스템 프롬프트
