@@ -6,6 +6,7 @@
 - Interaction Logic: 버튼 클릭 시 Agent 호출 여부(Trigger vs Bypass)를 결정하는 로직을 포함합니다.
 """
 
+from datetime import datetime
 import streamlit as st
 import pandas as pd
 from data_loader import load_master_data, save_uploaded_file_by_type, FILE_PROCESSORS
@@ -57,7 +58,7 @@ def setup_page_config():
 def render_sidebar():
     """
     [Sidebar] 데이터 관리 및 파일 업로더 영역
-    - Func-112 (데이터 적재): 사용자가 엑셀 파일을 업로드하면 data_loader를 통해 파싱 및 저장합니다.
+    - 사용자가 엑셀 파일을 업로드하면 data_loader를 통해 파싱 및 저장합니다.
     - Data Explorer: 현재 로드된 마스터 데이터(DB)를 미리보기 형태로 제공하여 정합성을 체크합니다.
     """
     with st.sidebar:
@@ -102,6 +103,7 @@ def render_quick_prompts():
     Logic Difference:
     1. Agent Trigger: 버튼 클릭 시 특정 텍스트(예: "리포트 줘")를 반환하여 main.py에서 Agent가 실행되도록 함.
     2. Direct Execution: 버튼 클릭 시 즉시 Python 함수를 실행하고 결과만 표시 (Agent LLM 비용 절감).
+    3. Agent에게 명확한 날짜를 포함하여 지시합니다.
 
     Returns:
         str | None: Agent에게 전달할 메시지 텍스트 (Direct Execution인 경우 None 반환)
@@ -111,12 +113,16 @@ def render_quick_prompts():
     col1, col2, col3 = st.columns(3)
     clicked_prompt = None
 
+    # 현재 날짜 계산
+    now = datetime.now()
+    current_ym = f"{now.year}년 {now.month}월"
+
     # =========================================================================
     # 버튼 1: 월말 구매 마감 리포트 (기존 유지 - 잘 동작함)
     # =========================================================================
     if col1.button("📅 월말 구매 마감 리포트", use_container_width=True):
         clicked_prompt = (
-            "이번 달 월말 구매 마감 현황을 먼저 '분석(Analyze)'하여 요약표를 보여주고, "
+            f"{current_ym} 구매 마감 현황을 먼저 '분석(Analyze)'하여 요약표를 보여주고, "
             "특이사항이 없다면 '리포트 파일(Excel)'을 생성해줘."
         )
     # =========================================================================

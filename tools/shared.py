@@ -45,8 +45,6 @@ except ImportError:
 # 애플리케이션 수명 주기 동안 유지되는 전역 데이터베이스 변수입니다.
 # LLM에게는 이 데이터의 스키마만 전달되고, 실제 값은 이 변수에 보관됩니다.
 
-print("Loading Master Data in shared.py... (One-time Execution)")
-
 if data_loader:
     # load_master_data() 함수는 { "product": df_product, "bom": df_bom, ... } 형태의 딕셔너리를 반환합니다.
     DB = data_loader.load_master_data()
