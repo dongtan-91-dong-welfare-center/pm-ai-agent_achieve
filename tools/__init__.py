@@ -45,8 +45,9 @@ from .order_tools import (
 # 용도: 엑셀 파일 생성, 월간 마감 리포트
 from .report_tools import (
     generate_excel_report,                    # 범용 엑셀 리포트 생성기
-    generate_monthly_purchase_closing_report, # 월간 구매 마감 보고서 생성 (Func-141)
-    calculate_monthly_material_requirement,   # 월간 자재 소요량 집계
+    generate_monthly_purchase_closing_report, # 월간 구매 마감 보고서 생성
+    generate_po_status_report,  #  발주 내역
+    generate_supplier_evaluation_report,    # 공급업체 평가
 )
 
 # -------------------------------------------------------------------------
@@ -67,11 +68,12 @@ AGENT_TOOLS = [
     # --- 계산 및 예측 (Calculation) ---
     calculate_gross_requirement,
     generate_purchase_prediction,
-    calculate_monthly_material_requirement,
 
     # --- 실행 및 생성 (Action/Write) ---
     generate_excel_report,
     generate_monthly_purchase_closing_report,
     submit_purchase_order,
+    generate_po_status_report,
+    generate_supplier_evaluation_report,
 
 ]
