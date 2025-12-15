@@ -9,6 +9,7 @@
 from datetime import datetime
 import streamlit as st
 import pandas as pd
+import base64
 import matplotlib.pyplot as plt
 from data_loader import load_master_data, save_uploaded_file_by_type, FILE_PROCESSORS
 
@@ -164,16 +165,26 @@ def render_analysis_result(result_data):
         return
 
     # ---------------------------------------------------------
-    # Case 1: Matplotlib Figure 객체 (그래프)
+    # Case 1: Base64 Encoded Image (저장된 그래프) - [핵심!]
     # ---------------------------------------------------------
-    # Code Generator가 만든 그래프 객체인지 확인
+    if isinstance(result_data, dict) and result_data.get("type") == "image_base64":
+        try:
+            # Base64 문자열 -> 이미지 디코딩
+            img_data = base64.b64decode(result_data["data"])
+            st.image(img_data, caption="생성된 시각화 결과", use_container_width=True)
+        except Exception as e:
+            st.error(f"이미지 렌더링 실패: {e}")
+        return
+
+    # ---------------------------------------------------------
+    # Case 2: Live Figure (실시간 객체)
+    # ---------------------------------------------------------
     if hasattr(result_data, "figure") or isinstance(result_data, plt.Figure):
-        st.write("### 📈 시각화 결과")
         st.pyplot(result_data)
         return
 
     # ---------------------------------------------------------
-    # Case 2: 일반 데이터 (DataFrame, Dict, List, Scalar)
+    # Case 3: 일반 데이터 (DataFrame, Dict, List, Scalar)
     # ---------------------------------------------------------
     chart_type = "table"
     df_viz = None

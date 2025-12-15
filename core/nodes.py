@@ -5,9 +5,12 @@
 - Context Management: HumanMessage 감지 시 대화 맥락(Analysis Data)을 초기화하여 환각을 방지합니다.
 """
 
+import io
+import base64
 from typing import Literal, Any
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from langchain_core.messages import AIMessage, SystemMessage, HumanMessage, ToolMessage
 
 # 내부 모듈 Import
@@ -15,7 +18,7 @@ from .state import AgentState
 from . import config
 from data_loader import TABLE_SCHEMA
 from .prompt import format_schema_for_prompt, CODE_GEN_SYSTEM_PROMPT
-from interface.formatting import format_analysis_result, format_thinking_process
+from interface.formatting import format_analysis_result
 import tools
 
 # __all__ 정의: 외부(graph.py)에서 가져다 쓸 함수들 명시
@@ -38,6 +41,40 @@ def serialize_result(data: Any) -> Any:
 
     Why: LangGraph의 State는 체크포인트 저장 시 JSON 호환성이 필요하기 때문입니다.
     """
+    # ----------------------------------------------------------------
+    # 1. Matplotlib 객체 처리 (Figure 또는 Axes -> Base64 String)
+    # ----------------------------------------------------------------
+    target_fig = None
+
+    # (1) Figure 객체 자체인 경우
+    if hasattr(data, "savefig"):
+        target_fig = data
+    # (2) Axes(Subplot) 객체인 경우 -> 부모 Figure 찾기
+    elif hasattr(data, "get_figure"):
+        target_fig = data.get_figure()
+    # (3) 리스트 내부에 Figure가 있는 경우 (예: [fig, ax])
+    elif isinstance(data, (list, tuple)) and len(data) > 0:
+        if hasattr(data[0], "savefig"):
+            target_fig = data[0]
+        elif hasattr(data[0], "get_figure"):
+            target_fig = data[0].get_figure()
+
+    # 이미지 변환 수행
+    if target_fig:
+        try:
+            buf = io.BytesIO()
+            # 이미지를 메모리에 저장 (PNG 포맷)
+            target_fig.savefig(buf, format='png', bbox_inches='tight')
+            buf.seek(0)
+            # Base64 문자열로 인코딩
+            img_str = base64.b64encode(buf.read()).decode('utf-8')
+            plt.close(target_fig)  # 메모리 누수 방지
+
+            # 저장 가능한 딕셔너리 형태로 반환
+            return {"type": "image_base64", "data": img_str}
+        except Exception as e:
+            return f"이미지 변환 실패: {str(e)}"
+
     # pandas dataframe -> dict (split orientation: index, columns, data 분리)
     if isinstance(data, pd.DataFrame):
         return {
