@@ -101,6 +101,9 @@ if user_input:
         try:
             inputs = {"messages": st.session_state["messages"]}
 
+            # [Fix 1] 상태 업데이트 지연을 위한 임시 저장소 생성
+            pending_paths = {}
+
             for event in app.stream(inputs, config=config):
                 for node_name, state_update in event.items():
 
@@ -109,43 +112,35 @@ if user_input:
                         messages = state_update.get("messages", [])
                         if messages:
                             last_msg = messages[-1]
-
-                            # Case A: 도구를 호출하려고 할 때
                             if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
                                 tools_str = ", ".join([tc['name'] for tc in last_msg.tool_calls])
                                 status_container.markdown(f"🧠 **[계획 수립]** `{tools_str}` 도구를 실행합니다.")
-
-                            # Case B: 도구 없이 그냥 말할 때 (질문하기, 인사하기 등)
-                            # Agent의 발언 내용을 상태창에 미리 보여줍니다.
                             else:
                                 content_preview = last_msg.content[:100] + "..." if len(
                                     last_msg.content) > 100 else last_msg.content
                                 # status_container.markdown(f"🤔 **[생각/질문]** {content_preview}")
-                                # (이 내용은 잠시 후 아래 full_response로도 채팅창에 예쁘게 나옵니다)
 
                     # 2. Tools (실행 및 경로 감지)
                     elif node_name == "tools":
                         tool_msgs = state_update.get("messages", [])
                         for t_msg in tool_msgs:
                             if isinstance(t_msg, ToolMessage):
-                                # (1) UI 표시
+                                # (1) UI 표시 (Write는 괜찮음)
                                 if "create_" in t_msg.name:
                                     status_container.write(f"💾 **[파일 생성]** {t_msg.name} 완료")
                                 else:
-                                    # status_container.write(f"🔧 **[실행 완료]** {t_msg.name}")
-                                    # with status_container.expander(f"결과 보기: {t_msg.name}"):
                                     status_container.write(f"🔧 **[실행 완료]** {t_msg.name}")
-                                    # st.markdown(t_msg.content)
+                                    # Expander 등이 필요하면 여기서 렌더링
 
-                                # (2) 파일 경로 감지 및 세션 저장
+                                # (2) [Fix 2] 세션 직접 수정 금지 -> 임시 변수(pending_paths)에 저장
                                 file_path = extract_file_path_from_tool(t_msg.content)
                                 if file_path:
-                                    if t_msg.name == "create_monthly_closing_file":
-                                        st.session_state["monthly_report_path"] = file_path
-                                    elif t_msg.name == "create_po_status_file":
-                                        st.session_state["po_status_path"] = file_path
-                                    elif t_msg.name == "create_supplier_evaluation_file":
-                                        st.session_state["supplier_eval_path"] = file_path
+                                    if "monthly" in t_msg.name:
+                                        pending_paths["monthly_report_path"] = file_path
+                                    elif "po_status" in t_msg.name:
+                                        pending_paths["po_status_path"] = file_path
+                                    elif "supplier" in t_msg.name:
+                                        pending_paths["supplier_eval_path"] = file_path
 
                                 new_tool_messages.append(t_msg)
 
@@ -171,17 +166,17 @@ if user_input:
                             full_response = last_msg.content
                             message_placeholder.markdown(full_response + " ▌")
 
+            # [Fix 3] 루프 종료 후 상태 일괄 업데이트 (이때 Rerun 되어도 안전함)
+            for key, path in pending_paths.items():
+                st.session_state[key] = path
+
             status_container.update(label="분석 완료", state="complete", expanded=False)
             message_placeholder.markdown(full_response)
 
             if analysis_artifact:
                 ui.render_analysis_result(analysis_artifact)
 
-            ai_msg = AIMessage(content=full_response)
-            if analysis_artifact:
-                ai_msg.additional_kwargs["artifact"] = analysis_artifact
-
-            # 루프가 끝난 후 세션 상태 업데이트 (GeneratorExit 방지)
+            # 메시지 저장 로직
             for tm in new_tool_messages:
                 st.session_state["messages"].append(tm)
 
@@ -189,7 +184,6 @@ if user_input:
             if analysis_artifact:
                 ai_msg.additional_kwargs["artifact"] = analysis_artifact
 
-            # 중복 추가 방지 (스트리밍 중 이미 추가된 경우가 아니라면 추가)
             if not st.session_state["messages"] or st.session_state["messages"][-1].content != full_response:
                 st.session_state["messages"].append(ai_msg)
 
