@@ -412,52 +412,40 @@ def generate_supplier_evaluation_report() -> str:
             for col in ['batch_no', 'po_id', 'product_id', 'vendor_id']:
                 if col in df.columns: df[col] = df[col].apply(_normalize_id)
 
-        # 날짜 변환
-        for df, col in [(gr_df, 'receipt_date'), (gr_df, 'delivery_date'), (po_df, 'po_date')]:
+        # 날짜 변환 (PO delivery_date 포함)
+        for df, col in [(gr_df, 'receipt_date'), (po_df, 'po_date'), (po_df, 'delivery_date')]:
             if col in df.columns: df[col] = pd.to_datetime(df[col], errors='coerce')
 
         nc_batch_set = set(nc_df['batch_no'].dropna().unique()) if not nc_df.empty else set()
+
+        # GR -> PO -> Vendor 순차 병합
         gr_base = gr_df.dropna(subset=['batch_no']).drop_duplicates(subset=['batch_no']).copy()
         gr_base['is_non_conformance'] = gr_base['batch_no'].apply(lambda x: "부적합" if x in nc_batch_set else "적합")
 
-        # -------------------------------------------------------------
-        # [Logic Change 1] Vendor Name from Good Receipt (if available)
-        # -------------------------------------------------------------
-        # GR에 vendor_id가 있으면 우선 사용, 없으면 PO merge를 통해 가져옴
-        if 'vendor_id' in gr_base.columns:
-            merged = gr_base.merge(vendor_df[['vendor_id', 'vendor_name']].drop_duplicates(), on='vendor_id',
-                                   how='left')
-        else:
-            # Fallback: Merge via PO if GR doesn't have vendor_id directly
-            # 하지만 요청사항은 GR에서 조회하라고 했으므로 GR->PO->Vendor가 아닌 GR->Vendor를 시도함.
-            # 만약 컬럼이 없으면 여기서 에러가 날 수 있으니, 안전하게 PO를 경유하되 "GR 기준"임을 명시.
-            # 여기서는 DB 스키마상 GR에 vendor_id가 있다고 가정하고 진행.
-            # merged = gr_base.merge(vendor_df[['vendor_id', 'vendor_name']].drop_duplicates(), on='vendor_id', how='left')
+        # 1. GR + PO (delivery_date 가져오기)
+        # PO에서 delivery_date 컬럼을 명시적으로 포함하여 병합
+        merged = gr_base.merge(po_df[['po_id', 'vendor_id', 'po_date', 'delivery_date']].drop_duplicates('po_id'),
+                               on='po_id', how='left')
 
-            # GR + PO (to get vendor_id)
-            # PO 데이터에서 po_id 중복 제거 후 병합
-            po_link = po_df[['po_id', 'vendor_id']].drop_duplicates(subset=['po_id'])
-            merged = gr_base.merge(po_link, on='po_id', how='left')
+        # 2. + Vendor Info
+        merged = merged.merge(vendor_df[['vendor_id', 'vendor_name']].drop_duplicates('vendor_id'), on='vendor_id',
+                              how='left')
 
-            # + Vendor Name
-            merged = merged.merge(vendor_df[['vendor_id', 'vendor_name']].drop_duplicates(), on='vendor_id', how='left')
-
-        # -------------------------------------------------------------
-        # [Logic Change 2] Delivery LT = (GR Date) - (PO Date)
-        # -------------------------------------------------------------
-        # PO 정보 병합 (Date 계산용)
-        merged = merged.merge(po_df[['po_id', 'po_date']].drop_duplicates('po_id'), on='po_id', how='left')
-
-        # Product 정보 병합
+        # 3. + Product Info
         merged = merged.merge(prod_df[['product_id', 'description']].drop_duplicates('product_id'), on='product_id',
                               how='left')
 
-        # 실제 납품일 기준 컬럼 선정 (receipt_date or delivery_date inside GR)
-        actual_deliv_col = 'receipt_date' if 'receipt_date' in merged.columns else 'delivery_date'
+        # 납기일(LT) 계산: delivery_date(1순위) -> receipt_date(2순위)
+        # PO 테이블에 있는 delivery_date를 우선적으로 사용
+        target_date_col = None
+        if 'delivery_date' in merged.columns:
+            target_date_col = 'delivery_date'
+        elif 'receipt_date' in merged.columns:
+            target_date_col = 'receipt_date'
 
-        # 납품일(LT) 계산
-        if actual_deliv_col in merged.columns and 'po_date' in merged.columns:
-            merged['delivery_lt'] = (merged[actual_deliv_col] - merged['po_date']).dt.days.fillna(0)
+        # target 컬럼이 존재하고 po_date가 있을 때만 계산
+        if target_date_col and 'po_date' in merged.columns:
+            merged['delivery_lt'] = (merged[target_date_col] - merged['po_date']).dt.days.fillna(0)
         else:
             merged['delivery_lt'] = 0
 
@@ -475,12 +463,9 @@ def generate_supplier_evaluation_report() -> str:
         file_path = os.path.join(OUTPUT_DIR, filename)
 
         with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-            # 시트 저장
             res.to_excel(writer, index=False, sheet_name='평가양식')
-            # 서식 적용
             _apply_excel_formatting(writer.sheets['평가양식'])
 
-        # Markdown Preview
         total_cnt = len(res)
         nc_cnt = len(res[res['부적합 여부'] == '부적합'])
         avg_lt = res['납품 소요일(LT)'].mean() if '납품 소요일(LT)' in res.columns else 0
