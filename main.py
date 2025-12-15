@@ -101,13 +101,15 @@ if user_input:
         try:
             inputs = {"messages": st.session_state["messages"]}
 
-            # [Fix 1] 상태 업데이트 지연을 위한 임시 저장소 생성
+            # [수정 1] 상태 업데이트 지연을 위한 임시 저장소
             pending_paths = {}
+            new_tool_messages = []
 
+            # 스트리밍 루프 (여기서는 UI 표시만! state 변경 금지)
             for event in app.stream(inputs, config=config):
                 for node_name, state_update in event.items():
 
-                    # 1. Reasoner (생각 및 대화)
+                    # 1. Reasoner
                     if node_name == "reasoner":
                         messages = state_update.get("messages", [])
                         if messages:
@@ -116,23 +118,22 @@ if user_input:
                                 tools_str = ", ".join([tc['name'] for tc in last_msg.tool_calls])
                                 status_container.markdown(f"🧠 **[계획 수립]** `{tools_str}` 도구를 실행합니다.")
                             else:
-                                content_preview = last_msg.content[:100] + "..." if len(
-                                    last_msg.content) > 100 else last_msg.content
-                                # status_container.markdown(f"🤔 **[생각/질문]** {content_preview}")
+                                pass  # 일반 대화는 나중에 표시
 
-                    # 2. Tools (실행 및 경로 감지)
+                    # 2. Tools
                     elif node_name == "tools":
                         tool_msgs = state_update.get("messages", [])
                         for t_msg in tool_msgs:
                             if isinstance(t_msg, ToolMessage):
-                                # (1) UI 표시 (Write는 괜찮음)
-                                if "create_" in t_msg.name:
-                                    status_container.write(f"💾 **[파일 생성]** {t_msg.name} 완료")
+                                # UI 표시
+                                if "generate_" in t_msg.name:  # 이름이 바뀌었으므로 체크
+                                    status_container.write(f"💾 **[파일 생성]** 완료")
+                                    # with status_container.expander(f"📊 상세 분석 결과", expanded=True):
+                                    #     st.markdown(t_msg.content)
                                 else:
                                     status_container.write(f"🔧 **[실행 완료]** {t_msg.name}")
-                                    # Expander 등이 필요하면 여기서 렌더링
 
-                                # (2) [Fix 2] 세션 직접 수정 금지 -> 임시 변수(pending_paths)에 저장
+                                # [수정 2] 경로를 세션에 바로 넣지 않고 임시 변수에 저장
                                 file_path = extract_file_path_from_tool(t_msg.content)
                                 if file_path:
                                     if "monthly" in t_msg.name:
@@ -144,39 +145,38 @@ if user_input:
 
                                 new_tool_messages.append(t_msg)
 
+                    # 3. Code Generator / Executor UI (기존 유지)
                     elif node_name == "code_generator":
-                        status_container.write("💻 **[설계]** 데이터 분석용 Python 코드를 생성했습니다.")
-                        code = state_update.get("generated_code") or state_update.get("python_code", "")
-                        with status_container.expander("생성된 코드 보기"):
-                            st.code(code, language="python")
-
+                        status_container.write("💻 **[설계]** Python 코드를 생성했습니다.")
+                        # ...
                     elif node_name == "code_executor":
                         status = state_update.get("execution_status")
                         if status == "success":
-                            status_container.write("✅ **[실행]** 코드 실행을 성공적으로 완료했습니다.")
+                            status_container.write("✅ **[실행]** 코드 실행 완료.")
                             if "analysis_data" in state_update:
                                 analysis_artifact = state_update["analysis_data"].get("last_run_result")
                         elif status == "error":
                             status_container.write(f"⚠️ **[오류]** 실행 실패, 재시도합니다.")
 
-                    # 최종 답변 스트리밍
+                    # 4. Final Response
                     if "messages" in state_update and state_update["messages"]:
                         last_msg = state_update["messages"][-1]
                         if isinstance(last_msg, AIMessage) and last_msg.content:
                             full_response = last_msg.content
                             message_placeholder.markdown(full_response + " ▌")
 
-            # [Fix 3] 루프 종료 후 상태 일괄 업데이트 (이때 Rerun 되어도 안전함)
+            # [수정 3] 루프가 안전하게 끝난 뒤 상태 일괄 업데이트
             for key, path in pending_paths.items():
                 st.session_state[key] = path
 
-            status_container.update(label="분석 완료", state="complete", expanded=False)
+            # 마무리 UI 업데이트
+            status_container.update(label="작업 완료", state="complete", expanded=False)
             message_placeholder.markdown(full_response)
 
             if analysis_artifact:
                 ui.render_analysis_result(analysis_artifact)
 
-            # 메시지 저장 로직
+            # 메시지 저장
             for tm in new_tool_messages:
                 st.session_state["messages"].append(tm)
 
@@ -187,14 +187,12 @@ if user_input:
             if not st.session_state["messages"] or st.session_state["messages"][-1].content != full_response:
                 st.session_state["messages"].append(ai_msg)
 
-        # GeneratorExit 및 모든 시스템 예외 처리
         except BaseException as e:
-            # GeneratorExit는 정상 종료의 일종일 수 있으므로 무시하거나 로그만 남김
             if type(e).__name__ == "GeneratorExit":
                 pass
             else:
                 status_container.update(label="오류 발생", state="error")
-                st.error(f"시스템 오류 발생: {str(e)}")
+                st.error(f"시스템 오류: {str(e)}")
 
 # --------------------------------------------------------------------------
 # 4. HIL (Human-in-the-Loop)

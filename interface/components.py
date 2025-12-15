@@ -147,25 +147,17 @@ def render_quick_prompts():
         )
     return clicked_prompt
 
+
 def render_analysis_result(result_data):
     """
     [Visualization] Agent의 분석 결과(Artifact)를 유형에 맞게 렌더링
-
-    Supported Types:
-    1. Table (DataFrame): 표 형태로 표시
-    2. Chart (Line/Bar): 그래프 시각화
-    3. Scalar (Int/Float): 지표(Metric) 형태로 표시
-    4. Text/JSON: 일반 텍스트 표시
-
-    Args:
-        result_data (dict | DataFrame | Scalar): 직렬화된 분석 결과
     """
     if result_data is None:
         st.info("결과 데이터가 없습니다.")
         return
 
     # ---------------------------------------------------------
-    # Case 1: Base64 Encoded Image (저장된 그래프) - [핵심!]
+    # Case 1: Base64 Encoded Image (저장된 그래프)
     # ---------------------------------------------------------
     if isinstance(result_data, dict) and result_data.get("type") == "image_base64":
         try:
@@ -192,7 +184,6 @@ def render_analysis_result(result_data):
     raw_data = result_data
 
     # 1. 직렬화된 데이터 구조(Dict) 파싱
-    # (Node에서 serialize_result로 변환된 데이터인 경우)
     if isinstance(result_data, dict) and "type" in result_data and "data" in result_data:
         chart_type = result_data.get("type", "table")
         raw_data = result_data["data"]
@@ -218,7 +209,7 @@ def render_analysis_result(result_data):
         return
 
     # ---------------------------------------------------------
-    # 최종 렌더링 (Priority: Scalar -> Table)
+    # 최종 렌더링 (Priority: Scalar -> Chart -> Table)
     # ---------------------------------------------------------
     if scalar_value is not None:
         if isinstance(scalar_value, (int, float)):
@@ -227,9 +218,17 @@ def render_analysis_result(result_data):
             st.info(f"분석 결과: {scalar_value}")
 
     elif df_viz is not None and not df_viz.empty:
-        # 데이터프레임 표시 (Expander 사용)
-        with st.expander(f"📊 분석 데이터 보기 ({len(df_viz)}건)", expanded=True):
-            st.dataframe(df_viz, use_container_width=True)
+        # [수정된 부분] chart_type에 따라 적절한 그래프 그리기
+        with st.expander(f"📊 분석 결과 확인 ({chart_type})", expanded=True):
+            if chart_type == "line":
+                st.line_chart(df_viz)
+            elif chart_type == "bar":
+                st.bar_chart(df_viz)
+            elif chart_type == "area":
+                st.area_chart(df_viz)
+            else:
+                # 기본값: 테이블 표시
+                st.dataframe(df_viz, use_container_width=True)
 
     else:
         # 그 외 처리 못한 데이터는 JSON으로 표시

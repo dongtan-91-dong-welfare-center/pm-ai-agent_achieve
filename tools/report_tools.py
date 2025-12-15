@@ -119,7 +119,10 @@ def generate_excel_report(data_json: str, filename: str = "report.xlsx") -> str:
 @tool
 def generate_monthly_purchase_closing_report() -> str:
     """
-    [월말 구매 마감 리포트 생성]
+    [월말 구매 마감 리포트 - 분석 및 생성 통합 도구]
+    사용자가 '월말 마감 분석' 또는 '리포트 생성'을 요청할 때 사용합니다.
+    이 도구는 데이터를 자동으로 '분석(Analyze)'하고, 결과를 포함한 엑셀 파일을 '생성(Create)'합니다.
+    별도의 Python 코드를 생성하여 분석할 필요가 없습니다.
     구매 상세 내역을 분석하여 4개 시트(Summary, Top_Items, Detail, Error_Log)가 포함된 엑셀을 생성합니다.
     **서식 적용: 헤더(회색/굵게), 테두리, 숫자 형식**
     """
@@ -334,8 +337,8 @@ def generate_monthly_purchase_closing_report() -> str:
 @tool
 def generate_po_status_report() -> str:
     """
-    [발주 현황 공유 파일 생성]
-    최근 2년 데이터를 조회하고, '제품 유형'별로 시트를 분할하여 저장합니다.
+    [발주 현황 공유 파일 - 분석 및 생성 통합 도구]
+    최근 2년 데이터를 '분석(Analyze)'하여 제품 유형별 현황을 집계하고 파일을 생성합니다.
     **서식 적용: 헤더(회색/굵게), 테두리, 숫자 형식**
     """
     print(">>> [Tool] 발주 현황 리포트 생성 시작")
@@ -392,9 +395,8 @@ def generate_po_status_report() -> str:
 @tool
 def generate_supplier_evaluation_report() -> str:
     """
-    [공급업체 평가 양식 생성]
-    1) Batch No -> Good Receipt -> Vendor ID -> Vendor Name 매핑으로 정확도 향상.
-    2) 납품일(LT) = Good Receipt(Delivery/Receipt Date) - PO Date 로 계산하여 실소요기간 반영.
+    [공급업체 평가 - 분석 및 생성 통합 도구]
+    공급업체 입고 내역과 부적합 정보를 '분석(Analyze)'하여 평가 점수를 산출하고 양식을 생성합니다.
     **서식 적용: 헤더(회색/굵게), 테두리, 숫자 형식**
     """
     print(">>> [Tool] 공급업체 평가 양식 생성 시작")
