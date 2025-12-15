@@ -125,10 +125,11 @@ def reasoner(state: AgentState) -> dict:
         formatted_result = format_analysis_result(result_data, "분석 결과")
 
         # CoT 로그 포맷팅
-        thinking_steps = state.get("thinking_steps", [])
-        thinking_output = format_thinking_process(thinking_steps) if thinking_steps else ""
-
-        final_msg = thinking_output + "\n\n" + formatted_result
+        # thinking_steps = state.get("thinking_steps", [])
+        # thinking_output = format_thinking_process(thinking_steps) if thinking_steps else ""
+        #
+        # final_msg = thinking_output + "\n\n" + formatted_result
+        final_msg = formatted_result
         return ensure_messages_list({
             "messages": [AIMessage(content=final_msg)],
             "execution_status": "done",
