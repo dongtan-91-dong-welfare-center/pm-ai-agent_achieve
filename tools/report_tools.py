@@ -432,8 +432,15 @@ def generate_supplier_evaluation_report() -> str:
             # 하지만 요청사항은 GR에서 조회하라고 했으므로 GR->PO->Vendor가 아닌 GR->Vendor를 시도함.
             # 만약 컬럼이 없으면 여기서 에러가 날 수 있으니, 안전하게 PO를 경유하되 "GR 기준"임을 명시.
             # 여기서는 DB 스키마상 GR에 vendor_id가 있다고 가정하고 진행.
-            merged = gr_base.merge(vendor_df[['vendor_id', 'vendor_name']].drop_duplicates(), on='vendor_id',
-                                   how='left')
+            # merged = gr_base.merge(vendor_df[['vendor_id', 'vendor_name']].drop_duplicates(), on='vendor_id', how='left')
+
+            # GR + PO (to get vendor_id)
+            # PO 데이터에서 po_id 중복 제거 후 병합
+            po_link = po_df[['po_id', 'vendor_id']].drop_duplicates(subset=['po_id'])
+            merged = gr_base.merge(po_link, on='po_id', how='left')
+
+            # + Vendor Name
+            merged = merged.merge(vendor_df[['vendor_id', 'vendor_name']].drop_duplicates(), on='vendor_id', how='left')
 
         # -------------------------------------------------------------
         # [Logic Change 2] Delivery LT = (GR Date) - (PO Date)
