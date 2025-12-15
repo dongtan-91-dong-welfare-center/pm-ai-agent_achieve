@@ -9,6 +9,7 @@
 from datetime import datetime
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
 from data_loader import load_master_data, save_uploaded_file_by_type, FILE_PROCESSORS
 
 # 브랜드 컬러 정의 (Orange)
@@ -158,29 +159,56 @@ def render_analysis_result(result_data):
     Args:
         result_data (dict | DataFrame | Scalar): 직렬화된 분석 결과
     """
+    if result_data is None:
+        st.info("결과 데이터가 없습니다.")
+        return
+
+    # ---------------------------------------------------------
+    # Case 1: Matplotlib Figure 객체 (그래프)
+    # ---------------------------------------------------------
+    # Code Generator가 만든 그래프 객체인지 확인
+    if hasattr(result_data, "figure") or isinstance(result_data, plt.Figure):
+        st.write("### 📈 시각화 결과")
+        st.pyplot(result_data)
+        return
+
+    # ---------------------------------------------------------
+    # Case 2: 일반 데이터 (DataFrame, Dict, List, Scalar)
+    # ---------------------------------------------------------
     chart_type = "table"
     df_viz = None
     scalar_value = None
     raw_data = result_data
 
     # 1. 직렬화된 데이터 구조(Dict) 파싱
+    # (Node에서 serialize_result로 변환된 데이터인 경우)
     if isinstance(result_data, dict) and "type" in result_data and "data" in result_data:
-        chart_type = result_data["type"]
+        chart_type = result_data.get("type", "table")
         raw_data = result_data["data"]
+        # DataFrame 복원 시도
+        if isinstance(raw_data, dict) and "columns" in raw_data:
+            try:
+                df_viz = pd.DataFrame(data=raw_data["data"], columns=raw_data["columns"])
+            except:
+                pass
 
-    # 2. 데이터 타입별 변환 (DataFrame 재구성)
-    if isinstance(raw_data, dict) and "columns" in raw_data:
-        # Pandas Split Orient 구조 복원
-        try:
-            df_viz = pd.DataFrame(data=raw_data["data"], columns=raw_data["columns"])
-        except:
-            pass
+    # 2. Raw DataFrame인 경우
     elif isinstance(raw_data, pd.DataFrame):
         df_viz = raw_data
+
+    # 3. 단순 값(Scalar)인 경우
     elif isinstance(raw_data, (int, float, str)):
         scalar_value = raw_data
 
-    # 3. 렌더링 (Priority: Scalar -> Chart/Table -> JSON)
+    # 4. 리스트인 경우
+    elif isinstance(raw_data, list):
+        st.write("목록 결과:")
+        st.json(raw_data)
+        return
+
+    # ---------------------------------------------------------
+    # 최종 렌더링 (Priority: Scalar -> Table)
+    # ---------------------------------------------------------
     if scalar_value is not None:
         if isinstance(scalar_value, (int, float)):
             st.metric("분석 결과", f"{scalar_value:,.0f}")
@@ -188,16 +216,11 @@ def render_analysis_result(result_data):
             st.info(f"분석 결과: {scalar_value}")
 
     elif df_viz is not None and not df_viz.empty:
-        # 데이터가 많을 수 있으므로 Expander 내부에 표시
-        with st.expander(f"분석 결과 데이터 ({chart_type})", expanded=True):
-            if chart_type == "line":
-                st.line_chart(df_viz)
-            elif chart_type == "bar":
-                st.bar_chart(df_viz)
-            else:
-                # use_container_width=True (st.dataframe의 stretch 옵션)
-                st.dataframe(df_viz, use_container_width=True)
+        # 데이터프레임 표시 (Expander 사용)
+        with st.expander(f"📊 분석 데이터 보기 ({len(df_viz)}건)", expanded=True):
+            st.dataframe(df_viz, use_container_width=True)
 
-    elif isinstance(raw_data, list):
-        st.write("목록 결과:")
-        st.json(raw_data)
+    else:
+        # 그 외 처리 못한 데이터는 JSON으로 표시
+        with st.expander("원본 데이터 확인"):
+            st.json(result_data)
