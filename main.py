@@ -2,8 +2,10 @@
 설명: Streamlit 앱 진입점
 """
 
+import ast
 import streamlit as st
 import os
+import uuid
 # ToolMessage 추가 Import
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 
@@ -80,7 +82,12 @@ if user_input:
         st.write(user_input)
 
     app = get_graph()
-    config = {"configurable": {"thread_id": "thread-1"}}
+
+    # 매 요청마다 고유한 thread_id를 생성하여 상태 충돌 방지
+    # streamlit은 전체 대화 기록(context)을 관리하므로
+    # langgraph가 매번 새로운 세션처럼 동작해도 문맥을 이해하는데 문제가 없음
+    thread_id = (uuid.uuid4())
+    config = {"configurable": {"thread_id": thread_id}}
 
     with st.chat_message("assistant"):
         status_container = st.status("🔍 AI Agent가 분석 중입니다...", expanded=True)
