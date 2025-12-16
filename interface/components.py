@@ -122,7 +122,7 @@ def render_quick_prompts():
     # =========================================================================
     # 버튼 1: 월말 구매 마감 리포트 (기존 유지 - 잘 동작함)
     # =========================================================================
-    if col1.button("📅 월말 구매 마감 리포트", use_container_width=True):
+    if col1.button("📅 월말 구매 마감 리포트", width="stretch"):
         clicked_prompt = (
             f"{current_ym} 구매 마감 현황을 먼저 '분석(Analyze)'하여 요약표를 보여주고, "
             "특이사항이 없다면 '리포트 파일(Excel)'을 생성해줘."
@@ -131,7 +131,7 @@ def render_quick_prompts():
     # [수정] 버튼 2: 공급업체 평가
     # 키워드: '평가 관리 양식' (단순 '평가해줘'는 LLM이 직접 계산하려고 함)
     # =========================================================================
-    if col2.button("📊 공급업체 평가", use_container_width=True):
+    if col2.button("📊 공급업체 평가", width="stretch"):
         clicked_prompt = (
             "현재 공급업체들의 입고 및 부적합 내역을 먼저 '분석(Analyze)'하여 결과를 보여주고, "
             "이후 '평가 양식 파일'을 생성해줘."
@@ -140,7 +140,7 @@ def render_quick_prompts():
     # [수정] 버튼 3: 발주 현황 공유 파일
     # 키워드: '발주 현황 공유 파일', '최근 2년' (도구 설명과 일치시킴)
     # =========================================================================
-    if col3.button("📂 발주 현황 공유 파일", use_container_width=True):
+    if col3.button("📂 발주 현황 공유 파일", width="stretch"):
         clicked_prompt = (
             "최근 2년치 발주 현황 데이터를 제품 유형별로 '분석(Analyze)'하여 요약해주고, "
             "그 다음 '공유 파일(Excel)'을 생성해줘."
@@ -163,7 +163,7 @@ def render_analysis_result(result_data):
         try:
             # Base64 문자열 -> 이미지 디코딩
             img_data = base64.b64decode(result_data["data"])
-            st.image(img_data, caption="생성된 시각화 결과", use_container_width=True)
+            st.image(img_data, caption="생성된 시각화 결과")
         except Exception as e:
             st.error(f"이미지 렌더링 실패: {e}")
         return
@@ -228,7 +228,7 @@ def render_analysis_result(result_data):
                 st.area_chart(df_viz)
             else:
                 # 기본값: 테이블 표시
-                st.dataframe(df_viz, use_container_width=True)
+                st.dataframe(df_viz, width="stretch")
 
     else:
         # 그 외 처리 못한 데이터는 JSON으로 표시

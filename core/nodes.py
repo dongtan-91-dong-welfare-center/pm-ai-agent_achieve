@@ -51,7 +51,12 @@ def serialize_result(data: Any) -> Any:
     if target_fig:
         try:
             buf = io.BytesIO()
+            # 그래프의 크기는 가로 10인치, 세로 6인치
+            target_fig.set_size_inches(10, 6)
+            # DPI 설정: 100DPI (10인치 * 100 = 1000px 너비)
+            # 결과적으로 약 1000 x 600 픽셀의 이미지 생성
             target_fig.savefig(buf, format='png', bbox_inches='tight')
+
             buf.seek(0)
             img_str = base64.b64encode(buf.read()).decode('utf-8')
             plt.close(target_fig)

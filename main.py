@@ -231,18 +231,18 @@ if "monthly_report_path" in st.session_state:
     if os.path.exists(file_path):
         st.divider()
         with open(file_path, "rb") as f:
-            st.download_button("📥 월말 구매 마감 리포트 다운로드", f, os.path.basename(file_path), key="dl_monthly", use_container_width=True)
+            st.download_button("📥 월말 구매 마감 리포트 다운로드", f, os.path.basename(file_path), key="dl_monthly", width="stretch")
 
 if "po_status_path" in st.session_state:
     file_path = st.session_state["po_status_path"]
     if os.path.exists(file_path):
         if "monthly_report_path" not in st.session_state: st.divider()
         with open(file_path, "rb") as f:
-            st.download_button("📥 발주 현황 공유 파일 다운로드", f, os.path.basename(file_path), key="dl_po", use_container_width=True)
+            st.download_button("📥 발주 현황 공유 파일 다운로드", f, os.path.basename(file_path), key="dl_po", width="stretch")
 
 if "supplier_eval_path" in st.session_state:
     file_path = st.session_state["supplier_eval_path"]
     if os.path.exists(file_path):
         if "monthly_report_path" not in st.session_state and "po_status_path" not in st.session_state: st.divider()
         with open(file_path, "rb") as f:
-            st.download_button("📥 공급업체 평가 양식 다운로드", f, os.path.basename(file_path), key="dl_eval", use_container_width=True)
+            st.download_button("📥 공급업체 평가 양식 다운로드", f, os.path.basename(file_path), key="dl_eval", width="stretch")
